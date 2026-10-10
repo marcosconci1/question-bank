@@ -1,0 +1,109 @@
+"""Tests for the portable native Hermes question-bank adapter."""
+
+from __future__ import annotations
+
+import importlib.util
+import json
+from pathlib import Path
+import sys
+import types
+
+import pytest
+
+
+TOOLS_PATH = Path(__file__).resolve().parents[1] / "integrations" / "hermes" / "questionbank-tools.py"
+
+
+def load_tools(monkeypatch: pytest.MonkeyPatch, enabled: bool = True):
+    config = types.ModuleType("hermes_cli.config")
+    config.load_config = lambda: {"question_bank": {"enabled": enabled}}
+    package = types.ModuleType("hermes_cli")
+    package.config = config
+    monkeypatch.setitem(sys.modules, "hermes_cli", package)
+    monkeypatch.setitem(sys.modules, "hermes_cli.config", config)
+    spec = importlib.util.spec_from_file_location("questionbank_tools_test", TOOLS_PATH)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class ToolContext:
+    def __init__(self):
+        self.tools = []
+
+    def register_tool(self, **kwargs):
+        self.tools.append(kwargs)
+
+
+def test_register_exposes_exactly_the_three_read_only_tools(monkeypatch):
+    tools = load_tools(monkeypatch)
+    context = ToolContext()
+    tools.register(context)
+    assert [tool["name"] for tool in context.tools] == ["search-questions", "get-question", "get-stats"]
+    assert all(tool["check_fn"] is tools.available for tool in context.tools)
+
+
+def test_disabled_config_returns_json_error_from_every_handler(monkeypatch):
+    tools = load_tools(monkeypatch, enabled=False)
+    for handler, args in (
+        (tools.search_questions, {"objective": "deadlock detection"}),
+        (tools.get_question, {"id": "poscomp-2024-01"}),
+        (tools.get_stats, {}),
+    ):
+        assert json.loads(handler(args)) == {"error": "question_bank_disabled"}
+
+
+def test_get_question_returns_complete_object_including_answer_key(monkeypatch, tmp_path):
+    tools = load_tools(monkeypatch)
+    questions = tmp_path / "questions"
+    questions.mkdir()
+    expected = {"id": "poscomp-2024-01", "stem": "Which option?", "answer": "C", "rubric": "Answer C."}
+    (questions / "poscomp-2024-01.json").write_text(json.dumps(expected), encoding="utf-8")
+    monkeypatch.setenv("QUESTION_BANK_ROOT", str(tmp_path))
+    assert json.loads(tools.get_question({"id": "poscomp-2024-01"})) == expected
+
+
+def test_search_passes_the_objective_to_question_search_cli(monkeypatch):
+    tools = load_tools(monkeypatch)
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs))
+        return types.SimpleNamespace(returncode=0, stdout='[{"id": "poscomp-2024-01"}]', stderr="")
+
+    monkeypatch.setattr(tools.subprocess, "run", fake_run)
+    result = json.loads(tools.search_questions({"objective": "transaction deadlocks", "limit": 3}))
+    assert result == [{"id": "poscomp-2024-01"}]
+    assert calls[0][0][1:] == ["query", "--json", "transaction deadlocks", "--top-k", "3", "--status", "active"]
+    assert "PYTHONPATH" not in calls[0][1]["env"]
+    assert "PYTHONHOME" not in calls[0][1]["env"]
+
+
+def test_all_tools_leave_bank_files_unchanged(monkeypatch, tmp_path):
+    tools = load_tools(monkeypatch)
+    questions = tmp_path / "questions"
+    data = tmp_path / "data"
+    questions.mkdir()
+    data.mkdir()
+    question = {"id": "poscomp-2024-01", "stem": "Question", "answer": "A"}
+    question_path = questions / "poscomp-2024-01.json"
+    question_path.write_text(json.dumps(question), encoding="utf-8")
+    answers_path = data / "answers.jsonl"
+    answers_path.write_text(json.dumps({"is_correct": True, "tags": ["databases"], "exam": "poscomp"}) + "\n", encoding="utf-8")
+    before = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    monkeypatch.setenv("QUESTION_BANK_ROOT", str(tmp_path))
+    monkeypatch.setattr(
+        tools.subprocess,
+        "run",
+        lambda command, **kwargs: types.SimpleNamespace(
+            returncode=0,
+            stdout="[]" if command[1] == "query" else '{"bank_questions_on_disk": 1}',
+            stderr="",
+        ),
+    )
+    assert json.loads(tools.search_questions({"objective": "Question"})) == []
+    assert json.loads(tools.get_question({"id": "poscomp-2024-01"}))["answer"] == "A"
+    assert json.loads(tools.get_stats({}))["overall"]["total"] == 1
+    after = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+    assert after == before
