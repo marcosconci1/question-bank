@@ -1,0 +1,21 @@
+name: question-bank
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: question-bank-qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6343:6333"
+      - "127.0.0.1:6344:6334"
+    volumes:
+      - question-bank-qdrant-data:/qdrant/storage
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  question-bank-qdrant-data:
+    external: true
