@@ -1,0 +1,19 @@
+flowchart TD
+    A([Start session]) --> B["Choose filter<br/>(exam / years / tags)"]
+    B --> C["Choose size<br/>(number of questions)"]
+    C --> D["Runner selects N active questions<br/>and writes the session file"]
+    D --> E["Show question<br/>(context, stem, options)"]
+    E --> F{"Question type?"}
+    F -- MC --> G["User picks a letter"]
+    F -- Discursive --> H["User writes answer,<br/>compares with rubric,<br/>self-grades"]
+    G --> I["Grade immediately:<br/>correct? + correct answer shown"]
+    H --> I
+    I --> J["Answer record appended<br/>to the answer log"]
+    J --> K{"More questions<br/>in session?"}
+    K -- yes --> E
+    K -- no --> L([Session summary:<br/>score, per-tag result])
+    L --> M["Stats update:<br/>wrong answers feed the<br/>next session's filter"]
+    M --> A
+
+    style A fill:#1a1a2e,stroke:#7c3aed,color:#e0e0e0
+    style L fill:#16213e,stroke:#7c3aed,color:#e0e0e0

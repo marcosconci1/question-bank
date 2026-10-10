@@ -1,0 +1,40 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 300
+  }
+}
+
+title: "Scope ruling: the bank is retrieval infrastructure, like graphify"
+
+bank: "QUESTION-BANK (the whole product) | free-format query in -> best-matching questions + file paths out" {
+  shape: cylinder
+  style.fill: "#e8f0fe"
+}
+
+mcp: "MCP server | 3 read-only tools" {
+  t1: "search-questions -> (0,n) questions + paths"
+  t2: "get-question -> complete object, answer key included"
+  t3: "get-stats -> aggregations over the optional answer log"
+}
+
+agent: "THE AGENT SIDE (not the bank) | practice loop, pacing, plans, resumability, proposals" {
+  shape: person
+  style.fill: "#fdf2d0"
+}
+
+content: "questions json + assets | pure content, append-only" {
+  shape: cylinder
+}
+
+log: "optional answer log | data/answers.jsonl | convention, not the bank writing" {
+  shape: cylinder
+}
+
+agent -> mcp.t1: "questions about X, Y, Z"
+agent -> mcp.t2
+agent -> mcp.t3
+mcp.t1 -> content: "reads"
+mcp.t2 -> content: "reads"
+mcp.t3 -> log: "reads"
+agent -> log: "agent writes answers here, if it wants to record"

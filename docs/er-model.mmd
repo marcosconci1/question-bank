@@ -1,0 +1,49 @@
+erDiagram
+    EXAM ||--o{ QUESTION : "has"
+    QUESTION ||--o{ OPTION : "offers"
+    CONTEXT |o--o{ QUESTION : "frames"
+    QUESTION }o--o{ CONCEPT : "covers"
+    STUDY_SESSION ||--o{ ANSWER : "produces"
+    QUESTION ||--o{ ANSWER : "receives"
+
+    EXAM {
+        string id PK
+        string board
+        int year
+    }
+    QUESTION {
+        string id PK
+        string exam_id FK
+        string type
+        string stem
+        string context_id FK
+    }
+    OPTION {
+        string question_id FK
+        string letter
+        string text
+        bool is_correct
+    }
+    CONTEXT {
+        string id PK
+        string text
+        list attachments
+    }
+    CONCEPT {
+        string slug PK
+        string name
+        string level
+    }
+    STUDY_SESSION {
+        string id PK
+        date date
+        string filter
+    }
+    ANSWER {
+        string id PK
+        string session_id FK
+        string question_id FK
+        string given_answer
+        bool is_correct
+        int time_spent
+    }

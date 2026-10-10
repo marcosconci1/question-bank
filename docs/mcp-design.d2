@@ -1,0 +1,34 @@
+vars: {
+  d2-config: {
+    layout-engine: elk
+    theme-id: 300
+  }
+}
+
+title: "Any agent can use the bank through three tools"
+
+agent: "ANY AGENT - Hermes, Samantha, coding CLIs" {
+  shape: person
+}
+
+mcp: "question-bank MCP server" {
+  t1: "search-questions(objective, filters, limit) | returns (0,n) ranked pointers: id, path, preview, tags"
+  t2: "get-question(id) | COMPLETE object - stem, images, options, ANSWER KEY"
+  t3: "get-stats() | read-only answer-log accuracy and error aggregations"
+}
+
+core: "search core - semantic (meaning) + tags (exact)" {
+  style.fill: "#e8f0fe"
+}
+
+bank: "the bank - questions json - source of truth" {
+  shape: cylinder
+}
+
+agent -> mcp.t1: "give me questions about X, Y, Z"
+agent -> mcp.t2: "pull the full question"
+agent -> mcp.t3: "show practice accuracy"
+mcp.t1 -> core
+mcp.t2 -> bank
+mcp.t3 -> bank
+core -> bank: "reads files, never edits them"
