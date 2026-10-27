@@ -117,8 +117,9 @@ async def test_get_stats_explains_an_absent_or_empty_log(fixture_bank):
     assert stats["per_tag"] == []
     assert stats["note"] == "No answers log exists yet."
 
-    (root / "data").mkdir()
-    (root / "data" / "answers.jsonl").write_text("\n", encoding="utf-8")
+    answers_file = root / "data" / "users" / "marcos" / "answers.jsonl"
+    answers_file.parent.mkdir(parents=True)
+    answers_file.write_text("\n", encoding="utf-8")
     async with Client(server, mode="legacy") as client:
         empty_stats = _tool_data(await client.call_tool("get-stats"))
     assert empty_stats["overall"]["total"] == 0
@@ -128,9 +129,9 @@ async def test_get_stats_explains_an_absent_or_empty_log(fixture_bank):
 @pytest.mark.anyio
 async def test_get_stats_aggregates_tags_exams_and_weeks(fixture_bank):
     root, _, _ = fixture_bank
-    data_dir = root / "data"
-    data_dir.mkdir()
-    (data_dir / "answers.jsonl").write_text(
+    answers_file = root / "data" / "users" / "marcos" / "answers.jsonl"
+    answers_file.parent.mkdir(parents=True)
+    answers_file.write_text(
         "\n".join(
             json.dumps(row)
             for row in [

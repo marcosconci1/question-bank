@@ -83,13 +83,12 @@ def test_search_passes_the_objective_to_question_search_cli(monkeypatch):
 def test_all_tools_leave_bank_files_unchanged(monkeypatch, tmp_path):
     tools = load_tools(monkeypatch)
     questions = tmp_path / "questions"
-    data = tmp_path / "data"
     questions.mkdir()
-    data.mkdir()
     question = {"id": "poscomp-2024-01", "stem": "Question", "answer": "A"}
     question_path = questions / "poscomp-2024-01.json"
     question_path.write_text(json.dumps(question), encoding="utf-8")
-    answers_path = data / "answers.jsonl"
+    answers_path = tmp_path / "data" / "users" / "marcos" / "answers.jsonl"
+    answers_path.parent.mkdir(parents=True)
     answers_path.write_text(json.dumps({"is_correct": True, "tags": ["databases"], "exam": "poscomp"}) + "\n", encoding="utf-8")
     before = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
     monkeypatch.setenv("QUESTION_BANK_ROOT", str(tmp_path))

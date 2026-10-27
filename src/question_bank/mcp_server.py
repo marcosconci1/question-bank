@@ -11,6 +11,7 @@ from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 
+from question_bank import answers
 from question_search import config, embed, flatten, store
 
 
@@ -209,7 +210,7 @@ def create_server(
     """Create the stdio MCP server, optionally with paths/core functions for tests."""
     root = (bank_root or config.BANK_ROOT).resolve()
     questions_dir = root / "questions"
-    answer_log = answers_path or root / "data" / "answers.jsonl"
+    answer_log = answers_path or answers.answers_path(root)
     server = MCPServer(
         name="question-bank",
         title="Question Bank",

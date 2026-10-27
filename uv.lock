@@ -837,6 +837,10 @@ dependencies = [
 dev = [
     { name = "pytest" },
 ]
+web = [
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -845,8 +849,10 @@ requires-dist = [
     { name = "pymupdf", specifier = ">=1.28.2" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "qdrant-client", specifier = ">=1.12.0" },
+    { name = "starlette", marker = "extra == 'web'", specifier = ">=0.40" },
+    { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.30" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "web"]
 
 [[package]]
 name = "referencing"
