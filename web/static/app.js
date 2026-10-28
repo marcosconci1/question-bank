@@ -138,11 +138,18 @@
     return fallback;
   }
 
+  // Markdown *italic* and **bold**, applied only outside $...$ math segments.
+  function withEmphasis(html) {
+    return html.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/).map((part, i) => i % 2 ? part : part
+      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*\n]+)\*/g, '<em>$1</em>')).join('');
+  }
+
   function renderTextBlock(text) {
     const div = document.createElement('div');
     div.className = 'text-block';
     // Source data uses a trailing backslash as a Markdown line break; drop it.
-    div.innerHTML = escapeHtml(String(text).replace(/\\(?=\r?\n|$)/g, ''));
+    div.innerHTML = withEmphasis(escapeHtml(String(text).replace(/\\(?=\r?\n|$)/g, '')));
     if (window.renderMathInElement) {
       try {
         window.renderMathInElement(div, {
@@ -537,8 +544,8 @@
         optionsContainer.appendChild(row);
       });
 
-      app.appendChild(optionsContainer);
       app.appendChild(feedbackArea);
+      app.appendChild(optionsContainer);
       app.appendChild(submitBtn);
 
       // Keyboard handler for A-E and Enter
@@ -639,7 +646,12 @@
             const statLine = document.createElement('div');
             statLine.className = 'quiet';
             statLine.style.marginTop = '0.75rem';
-            statLine.textContent = `${topicLabel} - practice attempt recorded`;
+            statLine.textContent = topicLabel;
+            fetch(`/api/u/${currentUser}/stats`).then(r => r.json()).then(st => {
+              const t = (st.by_tag || []).find(x => x.tag === (question.tags || [])[1]) ||
+                        (st.by_tag || []).find(x => x.tag === (question.tags || [])[0]);
+              if (t) statLine.textContent = `${t.label} - seen ${t.total}x - ${Math.round(t.accuracy * 100)}% correct`;
+            }).catch(() => {});
             feedbackArea.appendChild(statLine);
 
             // Save attempt
