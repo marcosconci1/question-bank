@@ -82,18 +82,21 @@ Everything else in er-model.md stands as written.
 
 ## MCP access layer (2026-09-23, approved)
 
-Agents consume the bank through an MCP server exposing exactly two
-read-only tools:
+Agents consume the bank through exactly three read-only tools:
 
     search-questions(objective, filters, limit) -> (0,n) ranked matches
         - objective in plain language (the student's study goal)
         - ranked by semantic search + tags; limit caps the count (never shuffles)
         - returns pointers: id, file path, preview, tags, status
-    get-question(id) -> COMPLETE question object
-        - stem blocks, image paths, options, ANSWER KEY (always included),
-          rubric, exam, year, tags, status
+    get-question(id, view?) -> COMPLETE question object or presentation view
+        - omitted view preserves the source object, including answer/rubric
+        - practice omits answer/rubric and resolves image paths for presentation
+        - solution includes answer/rubric and resolves image paths
+        - exam, year, tags, and status remain visible in every view
+    get-stats() -> index status and optional answer-log aggregations
 
 Rulings: no random selection ever (objective-driven retrieval only);
-answer key never withheld from agents. The bank files remain the source
-of truth; the MCP layer is another derived consumer over them, same as
-the search index.
+answer keys remain available to agents through the legacy or solution views.
+The answer-safe practice view protects independent attempts. Bank files remain
+the source of truth; the tool layer is another derived consumer over them,
+same as the search index.

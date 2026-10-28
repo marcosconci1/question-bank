@@ -69,9 +69,11 @@ else — running practice, pacing, plans, resumability — belongs to the
 AGENT side (the MCP client), not the bank.
 
 - **The bank provides:** `search-questions(objective, filters, limit)`
-  -> (0,n) ranked questions (ids, paths, previews) and
-  `get-question(id)` -> the complete question object. Free-format in,
-  questions + locations out. That is the whole product surface.
+  -> (0,n) ranked questions (ids, paths, previews),
+  `get-question(id, view?)` -> the complete question object or an explicit
+  practice/solution presentation, and `get-stats()` -> read-only answer-log
+  aggregations. Free-format in, questions + locations + statistics out. That
+  is the whole product surface.
 - **The agent provides:** the practice loop itself — presenting one
   question at a time, showing the answer key after each attempt,
   handling discursive self-grading with the rubric, keeping its own

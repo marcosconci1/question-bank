@@ -2,28 +2,38 @@
 
 ## Overview
 
-`question-bank` is a self-contained POSCOMP question-bank module. It stores one
-question per JSON file and provides validation, curation promotion, semantic
-retrieval, and a read-only MCP server. Semantic retrieval embeds question text
-through OpenRouter and stores vectors in this module's dedicated Qdrant
-instance.
+`question-bank` is a self-contained POSCOMP and ENADE Computer Science
+question-bank module. It stores one question per JSON file and provides
+validation, curation promotion, semantic retrieval, and a read-only MCP server.
+Semantic retrieval embeds question text through OpenRouter and stores vectors
+in this module's dedicated Qdrant instance.
 
 The module owns its bank and retrieval state. It does not share a Qdrant
 container, collection, volume, or ledger with other modules.
 
 ## Status
 
-Implemented and migrated into `hermes-modules`. The repository includes 1,306
-curated POSCOMP question files, validation and promotion scripts, the
-`question-search` CLI, and the `question-bank-mcp` server.
+Implemented and migrated into `hermes-modules`. The bank contains 1,375
+POSCOMP questions and 176 ENADE Computer Science questions from the 2005,
+2008, 2011, 2014, 2017, and 2021 editions. The ENADE records comprise 160
+objective and 16 discursive questions; 167 are active and 9 are suspended
+after source review. One 2014 record retains a truncated stem, and eight 2017
+records retain OCR errors. Official voids are excluded (2005 Q70, 2011 Q13,
+and 2021 Q29/Q33). The report import is recorded in
+`reports/enade-cc-import.json`. The live Qdrant collection and indexing ledger
+contain all 1,551 bank records, with zero pending indexing. The PDF-driven
+adapter reproduces all 176 ENADE records directly from the pinned sources;
+per-year acceptance tests prohibit report replay and verify rejection
+inventories and deterministic crop hashes.
 
 ## Data Contract
 
-- **Question bank:** `questions/*.json` is the versioned POSCOMP corpus. Each
-  file is one question and is the source of truth for searchable content.
-- **Optional answer log:** `data/answers.jsonl` may contain local answer events
-  consumed by the MCP statistics tool. It is ignored by Git and is not required
-  for retrieval.
+- **Question bank:** `questions/*.json` is the versioned POSCOMP and ENADE
+  corpus. Each file is one question and is the source of truth for searchable
+  content, including official answer keys and discursive rubrics.
+- **Optional answer log:** `data/users/<user>/answers.jsonl` may contain local answer events
+  consumed by the MCP statistics tool. Set `QUESTION_BANK_USER` to select the user (default: `marcos`).
+  It is ignored by Git and is not required for retrieval.
 - **State:** the content-hash indexing ledger is stored at
   `~/.local/share/question-bank/ledger.json` by default. Set
   `QUESTION_BANK_STATE` to relocate its parent directory.
@@ -69,6 +79,17 @@ uv run question-search index
 uv run question-search query "distributed systems consistency" --top-k 10
 uv run question-search status
 
+# Re-audit and import the pinned ENADE report fixtures idempotently.
+uv run python scripts/import-enade-reports.py --dry-run
+uv run python scripts/import-enade-reports.py
+uv run python scripts/promote-curation.py --exam enade --update
+
+# Verify the PDF-driven ENADE adapter without writing bank content.
+uv run python scripts/adapters/enade-cc-pdf.py --dry-run --report /tmp/enade-cc-runtime.json
+
+# Run one edition's source-backed oracle (2005, 2008, 2011, 2014, 2017, or 2021).
+./.venv/bin/python -m pytest 'tests/test-enade-adapter.py::test_generic_year_normalization_matches_all_audited_editions[2014]' -q
+
 # Run validation coverage and the complete automated suite.
 uv run python -m pytest tests/test-validate.py -q
 ./.venv/bin/python -m pytest tests/ -q
@@ -76,6 +97,20 @@ uv run python -m pytest tests/test-validate.py -q
 # Serve the read-only MCP interface over stdio.
 uv run question-bank-mcp
 ```
+
+## Hermes Study practice
+
+`integrations/hermes/question-bank/` is the Study-profile native plugin. It
+registers the read-only `search-questions`, `get-question`, and `get-stats`
+tools plus the `question-practice` skill. Practice retrieval omits answer keys
+and rubrics until the learner attempts the question; solution retrieval keeps
+them. Image blocks receive absolute local paths for Hermes vision.
+
+The agent-side recorder at
+`integrations/hermes/question-bank/skills/question-practice/scripts/record-answer.py`
+appends graded attempts to `data/users/<user>/answers.jsonl` (default user `marcos`). It never modifies question
+content and rejects duplicate `(question_id, session_id)` attempts. See
+`integrations/hermes/README.md` for activation and the compatibility contract.
 
 The validator and promotion workflow are provided by `question_bank.validate`
 and `scripts/promote-curation.py`; see `docs/` for schema and curation details.

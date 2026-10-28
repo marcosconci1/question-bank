@@ -69,9 +69,9 @@ Block types:
     {"type": "text",  "content": "Qual expressão representa a saída $X$?"}
   ],
   "context": null,                    // id of a file in contexts/, if the stem depends on shared text
-  "options": [                        // mc only, 2–5, order = A,B,C,…; each option is a block list
-    [{"type": "text", "content": "$f$ é injetora mas não sobrejetora;"}],
-    [{"type": "image", "src": "assets/poscomp-2022-68-altB.png", "alt": "grafo dirigido"}]
+  "options": [                        // mc only; 2–5 entries in A,B,C,… order
+    "$f$ é injetora mas não sobrejetora;", // legacy string shorthand remains valid
+    [{"type": "image", "src": "assets/poscomp-2022-68-altB.png", "alt": "imagem da alternativa"}]
   ],
   "answer": "A",                      // mc only: letter within options range
   "rubric": null,                     // discursive only: block list (expected answer / grading rubric)
@@ -95,7 +95,10 @@ Block types:
   is what encodes the text-1 / image / text-2 permutations the schema must
   represent.
 - Every block-bearing field allows the same two block types (stem, each
-  option, context body, rubric). No per-field exceptions.
+  option, context body, rubric). No per-field exceptions. Each `options`
+  entry may also remain a legacy string; a mixed or image-only option uses
+  an ordered block list. Image-only choices are valid when the image block
+  has a non-empty alt description.
 - Empty content fields are invalid (an empty stem or an empty option
   string is a capture bug).
 

@@ -34,7 +34,10 @@ source-specific code in the repo.
 | # | Source | What we reuse | We write | Status |
 |---|--------|---------------|----------|--------|
 | 1 | POSCOMP (POSCOMP-RAG dataset, Zenodo/HF) | peer-reviewed CSV, 1,340 rows | normalizer only | done (PoC) |
-| 2 | ENADE CC (Mendeley dataset w9hdbnrk85) | all editions 2005-2021, full PDFs + per-question captures | fetcher + normalizer | planned |
+| 2 | ENADE CC (Mendeley dataset w9hdbnrk85) | all six editions, pinned PDFs, keys, rubrics, and report-only fixtures | fetcher + PDF adapter + report importer | done: 176 records imported with 167 active and 9 suspended; PDF-driven adapter verified for every edition; Qdrant and the indexing ledger are synchronized at 1,551 records |
+
+Source review retains one truncated 2014 stem and OCR errors in eight 2017
+stems. Live semantic queries return ENADE records alongside POSCOMP records.
 | 3 | ENADE other tech courses | same dataset family / INEP PDFs | fetcher + normalizer | later |
 | 4 | PDF-only gaps | INEP PDFs via existing engines (see below) | config, not code | later |
 | 5 | POSCOMP pre-2016 / image questions | awesome-poscomp PDFs + MinerU/Docling | config, not code | later, only if the bank feels incomplete |
