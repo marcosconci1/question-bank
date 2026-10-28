@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
-from question_bank.validate import load_registered_tags, suspending_warning_codes, validate_bank
+from question_bank.validate import (
+    load_registered_tags,
+    suspending_warning_codes,
+    validate_bank,
+)
 
 
 def make_question(question_id: str = "poscomp-2024-01") -> dict:
@@ -25,6 +29,21 @@ def make_question(question_id: str = "poscomp-2024-01") -> dict:
         "source": "POSCOMP 2024, question 1",
         "tags": ["matematica"],
     }
+
+
+def make_enade_question(question_id: str = "enade-2021-9") -> dict:
+    question = make_question(question_id)
+    question.update(
+        {
+            "exam": "enade",
+            "year": 2021,
+            "number": 9,
+            "component": "specific",
+            "course": "computer-science",
+            "source": "ENADE 2021 Ciência da Computação, question 9",
+        }
+    )
+    return question
 
 
 def write_registry(tmp_path: Path, tags: tuple[str, ...] = ("matematica",)) -> Path:
@@ -65,6 +84,132 @@ def test_schema_v2_block_lists_are_valid(tmp_path):
     assert result.format_clean
 
 
+def test_mixed_legacy_and_image_backed_options_are_valid(tmp_path):
+    question = make_question()
+    question["options"] = [
+        "alpha",
+        [{"type": "text", "content": "bravo"}, {"type": "image", "src": "assets/b.png", "alt": "imagem da opção"}],
+        [{"type": "image", "src": "assets/c.png", "alt": "imagem da opção"}],
+        "delta",
+        "echo",
+    ]
+    result = validate_one(tmp_path, question)
+    assert result.format_clean
+    assert result.question["options"][0] == "alpha"
+    assert result.question["options"][3] == "delta"
+
+
+def test_enade_objective_question_requires_supported_course_and_component(tmp_path):
+    result = validate_one(tmp_path, make_enade_question())
+    assert result.format_clean
+
+
+def test_source_reviewed_complete_enade_records_have_no_mid_sentence_warning(tmp_path):
+    objective = make_enade_question("enade-2014-10")
+    objective["year"] = 2014
+    objective["number"] = 10
+    objective["stem"] = "Prompt complete; é correto o que se afirma em"
+    assert "stem_ends_mid_sentence" not in codes(validate_one(tmp_path, objective))
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("exam", "poscomp"),
+        ("year", 2017),
+        ("number", 11),
+        ("type", "discursive"),
+    ],
+)
+def test_source_review_exception_requires_consistent_enade_identity(tmp_path, field, value):
+    question = make_enade_question("enade-2014-10")
+    question["year"] = 2014
+    question["number"] = 10
+    question["stem"] = "Prompt complete; é correto o que se afirma em"
+    question[field] = value
+
+    assert "stem_ends_mid_sentence" in codes(validate_one(tmp_path, question))
+
+
+def test_source_review_exception_requires_filename_to_match_reviewed_id(tmp_path):
+    question = make_enade_question("enade-2014-10")
+    question["year"] = 2014
+    question["number"] = 10
+    question["stem"] = "Prompt complete; é correto o que se afirma em"
+
+    assert "stem_ends_mid_sentence" in codes(
+        validate_one(tmp_path, question, filename="enade-2014-11.json")
+    )
+
+
+def test_unreviewed_enade_stem_still_gets_mid_sentence_warning(tmp_path):
+    question = make_enade_question("enade-2017-10")
+    question["stem"] = "A respeito do problema, assinale a opção correta"
+    assert "stem_ends_mid_sentence" in codes(validate_one(tmp_path, question))
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected"),
+    [
+        ("exam", "unknown", "invalid_exam"),
+        ("year", 2019, "invalid_year"),
+        ("component", "general", "invalid_component"),
+        ("course", "information-systems", "invalid_course"),
+    ],
+)
+def test_enade_scope_fields_are_enforced(tmp_path, field, value, expected):
+    question = make_enade_question()
+    question[field] = value
+    result = validate_one(tmp_path, question)
+    assert expected in codes(result)
+
+
+def test_discursive_question_requires_only_a_rubric(tmp_path):
+    question = make_enade_question("enade-2021-d3")
+    question.update(
+        {
+            "type": "discursive",
+            "number": 3,
+            "rubric": [{"type": "text", "content": "Resposta esperada com justificativa."}],
+        }
+    )
+    question.pop("options")
+    question.pop("answer")
+    result = validate_one(tmp_path, question)
+    assert result.format_clean
+
+    question["options"] = []
+    question["answer"] = "A"
+    (tmp_path / "forbidden").mkdir()
+    result = validate_one(tmp_path / "forbidden", question)
+    assert {"forbidden_options", "forbidden_answer"} <= codes(result)
+
+
+def test_discursive_question_requires_nonempty_rubric(tmp_path):
+    question = make_enade_question("enade-2021-d3")
+    question.update({"type": "discursive", "number": 3, "rubric": []})
+    question.pop("options")
+    question.pop("answer")
+    result = validate_one(tmp_path, question)
+    assert "invalid_rubric_content" in codes(result)
+
+
+def test_context_must_resolve_to_an_existing_context_file(tmp_path):
+    question = make_enade_question()
+    question["context"] = "enade-2021-context-1"
+    result = validate_one(tmp_path, question)
+    assert "missing_context" in codes(result)
+
+    context_dir = tmp_path / "contexts"
+    context_dir.mkdir()
+    (context_dir / "enade-2021-context-1.json").write_text("{}", encoding="utf-8")
+    questions_dir = tmp_path / "questions-ok"
+    questions_dir.mkdir()
+    write_question(questions_dir, question)
+    result = validate_bank(questions_dir, write_registry(tmp_path)).questions[0]
+    assert "missing_context" not in codes(result)
+
+
 @pytest.mark.parametrize(
     ("mutate", "expected"),
     [
@@ -72,7 +217,7 @@ def test_schema_v2_block_lists_are_valid(tmp_path):
         (lambda question: question.__setitem__("source", ""), "empty_required_field"),
         (lambda question: question.__setitem__("year", 2001), "invalid_year"),
         (lambda question: question.__setitem__("number", 101), "invalid_number"),
-        (lambda question: question.__setitem__("type", "discursive"), "invalid_type"),
+        (lambda question: question.__setitem__("type", "essay"), "invalid_type"),
         (lambda question: question.__setitem__("options", question["options"][:4]), "invalid_option_count"),
         (lambda question: question["options"].__setitem__(2, ""), "empty_option_text"),
         (lambda question: question.__setitem__("answer", "F"), "invalid_answer"),

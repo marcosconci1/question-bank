@@ -6,20 +6,34 @@ the promotion pass can retain suspicious questions as suspended records.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from difflib import SequenceMatcher
 import json
-from pathlib import Path
 import re
 import unicodedata
-from typing import Any, Iterable
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
+from pathlib import Path
+from typing import Any
 
-
-REQUIRED_FIELDS = ("id", "type", "exam", "year", "number", "stem", "answer", "source", "tags")
+REQUIRED_FIELDS = ("id", "type", "exam", "year", "number", "stem", "source", "tags")
 POSCOMP_YEAR_RANGE = range(2002, 2026)
+ENADE_YEARS = frozenset({2005, 2008, 2011, 2014, 2017, 2021})
 # These warnings indicate incomplete question text and keep a question out of
 # the active bank. Other warnings remain visible to curators but are advisory.
 SUSPENDING_WARNING_CODES = frozenset({"short_stem", "stem_ends_mid_sentence"})
+SOURCE_COMPLETE_ENADE_IDS = frozenset(
+    {
+        "enade-2005-43", "enade-2005-44", "enade-2005-47", "enade-2005-49",
+        "enade-2005-50", "enade-2005-64", "enade-2005-66", "enade-2005-68",
+        "enade-2008-11", "enade-2008-31", "enade-2008-33", "enade-2008-34",
+        "enade-2008-36", "enade-2014-9", "enade-2014-10", "enade-2014-11",
+        "enade-2014-14", "enade-2014-15", "enade-2014-17", "enade-2014-18",
+        "enade-2014-20", "enade-2014-21", "enade-2014-22", "enade-2014-23",
+        "enade-2014-24", "enade-2014-25", "enade-2014-26", "enade-2014-27",
+        "enade-2014-29", "enade-2014-30", "enade-2014-31", "enade-2014-32",
+        "enade-2014-33", "enade-2014-d4", "enade-2014-d5",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -149,26 +163,34 @@ def validate_question(
             _add(result, "missing_required_field", f"missing required field: {name}")
             continue
         value = question[name]
-        if isinstance(value, str) and not value.strip():
-            _add(result, "empty_required_field", f"required field is empty: {name}")
-        elif isinstance(value, (list, dict)) and not value:
+        if isinstance(value, str) and not value.strip() or isinstance(value, (list, dict)) and not value:
             _add(result, "empty_required_field", f"required field is empty: {name}")
 
     question_id = question.get("id")
     if isinstance(question_id, str) and question_id.strip() and question_id != path.stem:
         _add(result, "id_filename_mismatch", "id does not match filename")
 
+    exam = question.get("exam")
+    if exam not in {"poscomp", "enade"}:
+        _add(result, "invalid_exam", "exam must be 'poscomp' or 'enade'")
+
     year = question.get("year")
-    if not isinstance(year, int) or isinstance(year, bool) or year not in POSCOMP_YEAR_RANGE:
-        _add(result, "invalid_year", "year must be an integer in the POSCOMP 2002-2025 range")
+    valid_year = (
+        isinstance(year, int)
+        and not isinstance(year, bool)
+        and (year in ENADE_YEARS if exam == "enade" else year in POSCOMP_YEAR_RANGE)
+    )
+    if not valid_year:
+        allowed = "the supported ENADE editions" if exam == "enade" else "the POSCOMP 2002-2025 range"
+        _add(result, "invalid_year", f"year must be an integer in {allowed}")
 
     number = question.get("number")
     if not isinstance(number, int) or isinstance(number, bool) or not 1 <= number <= 100:
         _add(result, "invalid_number", "number must be an integer from 1 through 100")
 
     question_type = question.get("type")
-    if question_type != "mc":
-        _add(result, "invalid_type", "this promotion pass supports only type 'mc'")
+    if question_type not in {"mc", "discursive"}:
+        _add(result, "invalid_type", "type must be 'mc' or 'discursive'")
 
     stem = content_text(question.get("stem"))
     if stem is None:
@@ -177,6 +199,8 @@ def validate_question(
     options = question.get("options")
     option_texts: list[str] = []
     if question_type == "mc":
+        if "answer" not in question:
+            _add(result, "missing_required_field", "missing required field: answer")
         if not isinstance(options, list) or len(options) != 5:
             _add(result, "invalid_option_count", "mc questions must have exactly 5 options")
         else:
@@ -192,6 +216,30 @@ def validate_question(
             _add(result, "invalid_answer", "mc answer must be one uppercase letter from A through E")
         elif isinstance(options, list) and len(options) == 5 and ord(answer) - ord("A") >= len(options):
             _add(result, "answer_out_of_range", "answer is outside the available option range")
+        if "rubric" in question:
+            _add(result, "forbidden_rubric", "mc questions must not include rubric")
+    elif question_type == "discursive":
+        if "options" in question:
+            _add(result, "forbidden_options", "discursive questions must not include options")
+        if "answer" in question:
+            _add(result, "forbidden_answer", "discursive questions must not include answer")
+        if content_text(question.get("rubric")) is None:
+            _add(result, "invalid_rubric_content", "discursive rubric must be non-empty schema-v2 content")
+
+    if exam == "enade":
+        if question.get("component") not in {"general-education", "specific"}:
+            _add(result, "invalid_component", "ENADE component must be 'general-education' or 'specific'")
+        if question.get("course") != "computer-science":
+            _add(result, "invalid_course", "ENADE course must be 'computer-science'")
+
+    if "context" in question:
+        context_id = question["context"]
+        if not isinstance(context_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", context_id):
+            _add(result, "invalid_context", "context must be a non-empty context id")
+        else:
+            context_path = path.parent.parent / "contexts" / f"{context_id}.json"
+            if not context_path.is_file():
+                _add(result, "missing_context", f"context file does not exist: contexts/{context_id}.json")
 
     tags = question.get("tags")
     if not isinstance(tags, list) or not tags:
@@ -204,7 +252,8 @@ def validate_question(
     if stem:
         if len(stem) < 40:
             _add(result, "short_stem", "stem has fewer than 40 characters", "warning")
-        if _ends_mid_sentence(stem):
+        reviewed_complete = is_source_reviewed_complete_enade(question, path)
+        if _ends_mid_sentence(stem) and not reviewed_complete:
             _add(result, "stem_ends_mid_sentence", "stem appears to end mid-sentence", "warning")
 
     for left in range(len(option_texts)):
@@ -219,6 +268,39 @@ def validate_question(
                 )
 
     return result
+
+
+def is_source_reviewed_complete_enade(question: dict[str, Any], path: Path) -> bool:
+    """Limit the source-review exception to the exact audited ENADE record."""
+
+    question_id = question.get("id")
+    if (
+        question.get("exam") != "enade"
+        or not isinstance(question_id, str)
+        or question_id not in SOURCE_COMPLETE_ENADE_IDS
+        or question_id != path.stem
+    ):
+        return False
+
+    match = re.fullmatch(r"enade-(2005|2008|2011|2014|2017|2021)-(d[1-5]|\d{1,2})", question_id)
+    if not match:
+        return False
+    year = int(match.group(1))
+    suffix = match.group(2)
+    number = int(suffix.removeprefix("d"))
+    if question.get("year") != year or question.get("number") != number:
+        return False
+
+    if suffix.startswith("d"):
+        return question.get("type") == "discursive" and content_text(question.get("rubric")) is not None
+
+    options = question.get("options")
+    return (
+        question.get("type") == "mc"
+        and isinstance(options, list)
+        and len(options) == 5
+        and question.get("answer") in set("ABCDE")
+    )
 
 
 def validate_bank(questions_dir: Path, tags_path: Path) -> BankValidation:

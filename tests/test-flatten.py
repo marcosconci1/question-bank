@@ -62,6 +62,31 @@ def test_flatten_content_blocks_with_image_alt_and_latex():
     assert lines[4] == "B. diagrama de portas"
 
 
+def test_flatten_mixed_legacy_options_preserves_order_and_searchable_text():
+    q = {
+        "id": "enade-2014-9",
+        "exam": "enade",
+        "year": 2014,
+        "number": 9,
+        "type": "mc",
+        "stem": [{"type": "text", "content": "Enunciado legível para pesquisa."}],
+        "options": [
+            "texto legado",
+            [{"type": "text", "content": "texto OCR confiável"}, {"type": "image", "src": "assets/opt-b.png", "alt": "imagem da alternativa"}],
+            [{"type": "image", "src": "assets/opt-c.png", "alt": "imagem da alternativa"}],
+        ],
+        "answer": "A",
+        "tags": ["banco-de-dados"],
+    }
+    flattened = flatten_question(q)
+    assert "Enunciado legível para pesquisa." in flattened
+    assert "A. texto legado" in flattened
+    assert "B. texto OCR confiável" in flattened
+    assert "imagem da alternativa" in flattened
+    assert "C. imagem da alternativa" in flattened
+    assert build_payload(q, flattened)["tags"] == ["banco-de-dados"]
+
+
 def test_flatten_with_context_file(tmp_path):
     contexts_dir = tmp_path / "contexts"
     contexts_dir.mkdir()

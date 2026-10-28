@@ -6,16 +6,21 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import sys
 import tempfile
+from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-from question_bank.validate import issue_codes, suspending_warning_codes, validate_bank
-
+from question_bank.validate import (
+    SOURCE_COMPLETE_ENADE_IDS,
+    is_source_reviewed_complete_enade,
+    issue_codes,
+    suspending_warning_codes,
+    validate_bank,
+)
 
 JSON_STRING = r'"(?:\\.|[^"\\])*"'
 CURATION_FIELDS = re.compile(
@@ -23,6 +28,51 @@ CURATION_FIELDS = re.compile(
     rf'(?:,\r?\n[ \t]*"status_reason"\s*:\s*{JSON_STRING})?'
     r'(?=\r?\n[ \t]*})'
 )
+SOURCE_VERIFIED_ENADE_COMPLETION_IDS = SOURCE_COMPLETE_ENADE_IDS
+SOURCE_INCOMPLETE_ENADE_REASONS = {
+    "enade-2014-19": "source_stem_incomplete",
+    "enade-2017-10": "source_stem_ocr_incomplete",
+    "enade-2017-11": "source_stem_ocr_incomplete",
+    "enade-2017-14": "source_stem_ocr_incomplete",
+    "enade-2017-15": "source_stem_ocr_incomplete",
+    "enade-2017-16": "source_stem_ocr_incomplete",
+    "enade-2017-20": "source_stem_ocr_incomplete",
+    "enade-2017-22": "source_stem_ocr_incomplete",
+    "enade-2017-25": "source_stem_ocr_incomplete",
+}
+
+
+def curation_reasons(result) -> list[str]:
+    """Return suspension warnings, excluding source-verified ENADE choice lead-ins.
+
+    The review report records exact source PDF hashes, page evidence, and
+    answer-key or rubric checks for each allowlisted record. For objective
+    records, the official page and all five alternatives complete the prompt;
+    for discursive records, the official prompt and rubric are both present.
+    """
+
+    reasons = suspending_warning_codes(result.warnings)
+    question = result.question
+    if question.get("exam") != "enade":
+        return reasons
+    question_id = question.get("id")
+    if question_id in SOURCE_INCOMPLETE_ENADE_REASONS:
+        specific_reason = SOURCE_INCOMPLETE_ENADE_REASONS[question_id]
+        return [specific_reason if reason == "stem_ends_mid_sentence" else reason for reason in reasons] or [specific_reason]
+    if question_id not in SOURCE_VERIFIED_ENADE_COMPLETION_IDS:
+        return reasons
+    question_path = getattr(result, "path", Path(f"{question_id}.json"))
+    if not is_source_reviewed_complete_enade(question, question_path):
+        return reasons
+    if question.get("type") == "discursive":
+        rubric = question.get("rubric")
+        has_rubric = bool(rubric.strip()) if isinstance(rubric, str) else bool(rubric)
+        if has_rubric and not question.get("options") and not question.get("answer"):
+            return [reason for reason in reasons if reason != "stem_ends_mid_sentence"]
+        return reasons
+    if question.get("type") != "mc" or len(question.get("options", [])) != 5 or not question.get("answer"):
+        return reasons
+    return [reason for reason in reasons if reason != "stem_ends_mid_sentence"]
 
 
 def append_status(raw: str, status: str, reason: str | None) -> str:
@@ -84,6 +134,10 @@ def main() -> int:
         action="store_true",
         help="rewrite existing curation fields using the current suspension policy",
     )
+    parser.add_argument(
+        "--exam",
+        help="promote only records from this exam while validating the full bank",
+    )
     args = parser.parse_args()
 
     report = validate_bank(args.questions, args.tags)
@@ -98,13 +152,17 @@ def main() -> int:
         print(json.dumps(payload, ensure_ascii=False), file=sys.stderr)
         return 1
 
+    questions = report.questions
+    if args.exam:
+        questions = [result for result in questions if result.question.get("exam") == args.exam]
+
     active = 0
     suspended = 0
-    for result in report.questions:
+    for result in questions:
         with result.path.open(encoding="utf-8", newline="") as handle:
             raw = handle.read()
         base = remove_curation_fields(raw) if args.update else raw
-        reasons = suspending_warning_codes(result.warnings)
+        reasons = curation_reasons(result)
         if reasons:
             updated = append_status(base, "suspended", ";".join(reasons))
             suspended += 1
@@ -113,7 +171,7 @@ def main() -> int:
             active += 1
         if updated != raw:
             atomic_write(result.path, updated)
-    print(json.dumps({"total": len(report.questions), "active": active, "suspended": suspended}))
+    print(json.dumps({"total": len(questions), "active": active, "suspended": suspended}))
     return 0
 
 
