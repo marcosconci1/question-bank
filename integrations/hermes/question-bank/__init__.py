@@ -1,4 +1,4 @@
-"""Study-profile question-bank plugin and bundled practice skill."""
+"""Study-profile question-bank plugin and bundled practice skills."""
 
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -19,7 +19,5 @@ tools = _load_tools()
 
 def register(ctx):
     tools.register(ctx)
-    ctx.register_skill(
-        "question-practice",
-        Path(__file__).resolve().parent / "skills" / "question-practice" / "SKILL.md",
-    )
+    for name in ("question-practice", "exercise-list"):
+        ctx.register_skill(name, Path(__file__).resolve().parent / "skills" / name / "SKILL.md")

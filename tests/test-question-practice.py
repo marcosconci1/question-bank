@@ -101,7 +101,10 @@ def test_plugin_registers_four_tools_and_practice_skills(monkeypatch):
     assert [tool["name"] for tool in context.tools] == ["search-questions", "get-question", "list-topics", "get-stats"]
     view = context.tools[1]["schema"]["parameters"]["properties"]["view"]
     assert view["enum"] == ["practice", "solution"]
-    assert [(name, path.is_file()) for name, path in context.skills] == [("question-practice", True)]
+    assert [(name, path.is_file()) for name, path in context.skills] == [
+        ("question-practice", True),
+        ("exercise-list", True),
+    ]
 
 
 def test_recorder_appends_denormalized_attempt_and_rejects_duplicate(monkeypatch, tmp_path):
