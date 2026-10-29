@@ -39,9 +39,11 @@ shorthand for a single text block. CONTEXT still lives once in
 
 **CORRECTION** — **[NEW]** a first-class record, not a habit.
 - `{question_id, field, old_value, new_value, reason, date}`.
-- Corrections overlay lives in `corrections/`; importers apply them
-  after capture. This is what keeps capture idempotent (rerun an
-  importer without losing manual fixes) and curation auditable.
+- Corrections overlay lives in `corrections/log.jsonl` (one JSON line
+  each; last entry per `(question_id, field)` wins). Readers apply it on
+  read (`question_bank.corrections`; the Hermes plugin has a matching
+  inline copy), and the search ledger hashes it, so a fix reindexes. Question
+  files are never edited, so importers stay idempotent and curation auditable.
 
 ### Behavior entities (runtime, not bank content)
 

@@ -11,6 +11,8 @@ import re
 from typing import Any
 import uuid
 
+from question_bank.corrections import apply_corrections
+
 
 DEFAULT_USER = "marcos"
 _USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -111,7 +113,7 @@ def _question(root: Path, question_id: str) -> dict[str, Any]:
         raise ValueError("question file must contain valid JSON") from exc
     if not isinstance(question, dict):
         raise ValueError("question file must contain an object")
-    return question
+    return apply_corrections(question, root)
 
 
 def record_answer(root: Path | str, user: str, request: dict[str, Any]) -> dict[str, Any]:

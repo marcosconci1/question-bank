@@ -144,6 +144,28 @@ def search_questions(args: dict[str, Any], **kwargs: Any) -> str:
         return _error("question_bank_adapter_error", error_class=type(exc).__name__)
 
 
+def _apply_corrections(question: dict[str, Any]) -> dict[str, Any]:
+    """Apply corrections/log.jsonl (last entry per field wins). See question_bank.corrections."""
+    log = _bank_root() / "corrections" / "log.jsonl"
+    if not log.is_file():
+        return question
+    fixes: dict[str, Any] = {}
+    for line in log.read_text(encoding="utf-8").splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if (
+            isinstance(entry, dict)
+            and entry.get("question_id") == question.get("id")
+            and isinstance(entry.get("field"), str)
+            and entry["field"] not in {"id", "exam", "year", "number", "new-question"}
+            and "new_value" in entry
+        ):
+            fixes[entry["field"]] = entry["new_value"]
+    return {**question, **fixes}
+
+
 def _question_path(question_id: str) -> Path:
     if not question_id or Path(question_id).name != question_id:
         raise ValueError("Question id must be a single file name component")
@@ -196,6 +218,7 @@ def get_question(args: dict[str, Any], **kwargs: Any) -> str:
         question = json.loads(question_path.read_text(encoding="utf-8"))
         if not isinstance(question, dict):
             raise ValueError("Question file does not contain an object")
+        question = _apply_corrections(question)
         if view is not None:
             question = _presentation_question(question, view)
         return json.dumps(question, ensure_ascii=False)

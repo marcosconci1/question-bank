@@ -12,6 +12,7 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from question_bank import answers
+from question_bank.corrections import apply_corrections
 from question_search import config, embed, flatten, store
 
 
@@ -40,7 +41,7 @@ def _read_question(questions_dir: Path, question_id: str) -> tuple[Path, dict[st
         raise ValueError(f"Question file is not valid JSON: {question_id}") from exc
     if not isinstance(question, dict):
         raise ValueError(f"Question file does not contain an object: {question_id}")
-    return question_file, question
+    return question_file, apply_corrections(question, questions_dir.parent)
 
 
 def _stem_preview(question: dict[str, Any]) -> str:

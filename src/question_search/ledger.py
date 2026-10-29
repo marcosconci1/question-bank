@@ -5,6 +5,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from question_bank.corrections import load_corrections
+
 from . import config
 
 
@@ -57,8 +59,13 @@ def reconcile(
     unchanged: list[str] = []
     deleted: list[dict[str, Any]] = []
 
+    fixes = load_corrections(q_dir.parent)
     for qid, p in on_disk_files.items():
         curr_hash = file_hash(p)
+        if qid in fixes:
+            # Uncorrected files keep their plain hash, so only fixed ones reindex.
+            payload = json.dumps(fixes[qid], sort_keys=True, ensure_ascii=False)
+            curr_hash = hashlib.sha256((curr_hash + payload).encode("utf-8")).hexdigest()
         if qid in stored_questions:
             old_hash = stored_questions[qid].get("hash")
             if old_hash == curr_hash:

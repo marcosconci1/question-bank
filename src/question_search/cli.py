@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from question_bank.corrections import apply_corrections
 from . import config, embed, errors, flatten, ledger, store
 
 
@@ -60,7 +61,7 @@ def cmd_index(args: argparse.Namespace) -> int:
         for item in to_index:
             p: Path = item["path"]
             try:
-                q_data = json.loads(p.read_text(encoding="utf-8"))
+                q_data = apply_corrections(json.loads(p.read_text(encoding="utf-8")), p.parent.parent)
             except Exception as exc:
                 raise errors.QuestionSearchError("invalid_question_file", f"Failed to parse {p}: {exc}") from exc
             qid = q_data.get("id") or item["question_id"]
