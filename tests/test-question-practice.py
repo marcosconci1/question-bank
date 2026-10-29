@@ -93,12 +93,12 @@ def test_practice_view_withholds_discursive_rubric(monkeypatch, tmp_path):
     }
 
 
-def test_plugin_registers_three_tools_and_practice_skill(monkeypatch):
+def test_plugin_registers_four_tools_and_practice_skills(monkeypatch):
     plugin = load_module(monkeypatch, PLUGIN_PATH, "question_bank_plugin_test")
     context = ToolContext()
     plugin.register(context)
 
-    assert [tool["name"] for tool in context.tools] == ["search-questions", "get-question", "get-stats"]
+    assert [tool["name"] for tool in context.tools] == ["search-questions", "get-question", "list-topics", "get-stats"]
     view = context.tools[1]["schema"]["parameters"]["properties"]["view"]
     assert view["enum"] == ["practice", "solution"]
     assert [(name, path.is_file()) for name, path in context.skills] == [("question-practice", True)]

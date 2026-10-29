@@ -116,6 +116,11 @@ shared runtime, no shared storage, no cross-dependencies, ever.
 - **State**: `~/.local/share/question-bank/` (ledger), never library-query's
   state dir.
 - **Config**: environment variables (`QDRANT_URL`, `OPENROUTER_API_KEY`).
+  The key is optional: with no key (or no Qdrant) `question-search query`
+  falls back to `question_search/lexical.py`, a keyless BM25 search over the
+  question files with the corrections overlay applied. Hermes agents expand
+  the objective into keywords and tag filters themselves; people without an
+  agent can query by hand.
   No shared configuration file and no cross-repo environment variables.
 - **Code**: no imports from library-query. Borrowed *patterns* (ledger
   scheme, batching, error taxonomy), copied where needed, never imported.

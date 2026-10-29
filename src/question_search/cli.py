@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from question_bank.corrections import apply_corrections
-from . import config, embed, errors, flatten, ledger, store
+from . import config, embed, errors, flatten, ledger, lexical, store
 
 
 def parse_year_range(raw: str) -> tuple[int, int]:
@@ -31,6 +31,15 @@ def cmd_index(args: argparse.Namespace) -> int:
     q_dir = config.QUESTIONS_DIR
     if not q_dir.exists() or not any(q_dir.glob("*.json")):
         raise errors.EmptyBankError(f"Question bank directory {q_dir} is empty or missing")
+
+    if not config.OPENROUTER_API_KEY:
+        # Keyword search reads the files directly, so there is nothing to index.
+        note = "No OPENROUTER_API_KEY: nothing to index. Keyword search reads the bank directly."
+        if getattr(args, "json", False):
+            print(json.dumps({"indexed": 0, "mode": "lexical", "note": note}, ensure_ascii=False))
+        else:
+            print(note)
+        return errors.EXIT_OK
 
     store.ensure_collection()
 
@@ -126,19 +135,35 @@ def cmd_query(args: argparse.Namespace) -> int:
     year_range = parse_year_range(args.years) if args.years else None
     tags = [t.strip() for t in args.tags.split(",")] if args.tags else None
 
-    # Embed query text
-    query_vectors = embed.embed([query_text])
-    if not query_vectors:
-        raise errors.EmbeddingApiError("Received empty embedding vector for query")
-
-    results = store.search_questions(
-        query_vector=query_vectors[0],
-        limit=args.top_k,
-        status=args.status,
-        exam=args.exam,
-        year_range=year_range,
-        tags=tags,
-    )
+    mode = getattr(args, "mode", "auto")
+    results = None
+    if mode in ("auto", "semantic") and (mode == "semantic" or config.OPENROUTER_API_KEY):
+        try:
+            query_vectors = embed.embed([query_text])
+            if not query_vectors:
+                raise errors.EmbeddingApiError("Received empty embedding vector for query")
+            results = store.search_questions(
+                query_vector=query_vectors[0],
+                limit=args.top_k,
+                status=args.status,
+                exam=args.exam,
+                year_range=year_range,
+                tags=tags,
+            )
+        except errors.QuestionSearchError:
+            if mode == "semantic":
+                raise
+            results = None  # auto: fall back to keyword search
+    if results is None:
+        results = lexical.search(
+            query_text,
+            limit=args.top_k,
+            status=args.status,
+            exam=args.exam,
+            year_range=year_range,
+            tags=tags,
+            root=config.BANK_ROOT,
+        )
 
     if getattr(args, "json", False):
         print(json.dumps(results, indent=2, ensure_ascii=False))
@@ -172,6 +197,7 @@ def cmd_status(args: argparse.Namespace) -> int:
     pending = max(0, bank_count - indexed_count)
 
     info = {
+        "search_mode": "semantic+lexical-fallback" if config.OPENROUTER_API_KEY else "lexical",
         "qdrant_url": config.QDRANT_URL,
         "collection": config.COLLECTION,
         "qdrant_points": qdrant_points,
@@ -185,6 +211,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(json.dumps(info, indent=2, ensure_ascii=False))
     else:
         print("Question Bank Semantic Search Status:")
+        print(f"  Search Mode:     {info['search_mode']}")
         print(f"  Qdrant URL:      {info['qdrant_url']}")
         print(f"  Collection:      {info['collection']}")
         print(f"  Qdrant Points:   {info['qdrant_points']}")
@@ -217,6 +244,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_query.add_argument("--exam", type=str, default=None, help="Exam filter (e.g. poscomp, enade)")
     p_query.add_argument("--years", type=str, default=None, help="Year range (e.g. 2015-2024 or 2020)")
     p_query.add_argument("--status", type=str, default="active", help="Question status (default: active, or 'all')")
+    p_query.add_argument(
+        "--mode",
+        choices=("auto", "semantic", "lexical"),
+        default="auto",
+        help="auto: semantic when a key and vector store work, else keyword (default)",
+    )
     p_query.add_argument("--json", action="store_true", help="Output results in JSON format")
 
     # status subcommand

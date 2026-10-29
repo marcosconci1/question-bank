@@ -36,11 +36,11 @@ class ToolContext:
         self.tools.append(kwargs)
 
 
-def test_register_exposes_exactly_the_three_read_only_tools(monkeypatch):
+def test_register_exposes_exactly_the_four_read_only_tools(monkeypatch):
     tools = load_tools(monkeypatch)
     context = ToolContext()
     tools.register(context)
-    assert [tool["name"] for tool in context.tools] == ["search-questions", "get-question", "get-stats"]
+    assert [tool["name"] for tool in context.tools] == ["search-questions", "get-question", "list-topics", "get-stats"]
     assert all(tool["check_fn"] is tools.available for tool in context.tools)
 
 
@@ -50,6 +50,7 @@ def test_disabled_config_returns_json_error_from_every_handler(monkeypatch):
         (tools.search_questions, {"objective": "deadlock detection"}),
         (tools.get_question, {"id": "poscomp-2024-01"}),
         (tools.get_stats, {}),
+        (tools.list_topics, {}),
     ):
         assert json.loads(handler(args)) == {"error": "question_bank_disabled"}
 
@@ -106,3 +107,32 @@ def test_all_tools_leave_bank_files_unchanged(monkeypatch, tmp_path):
     assert json.loads(tools.get_stats({}))["overall"]["total"] == 1
     after = {path.relative_to(tmp_path): path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
     assert after == before
+
+
+def test_list_topics_counts_only_active_questions_and_applies_corrections(monkeypatch, tmp_path):
+    tools = load_tools(monkeypatch)
+    monkeypatch.setenv("QUESTION_BANK_ROOT", str(tmp_path))
+    (tmp_path / "questions").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "tags.md").write_text(
+        "# Tags\n\n## Registry (seeded)\n\n"
+        "trees | Trees | topic\nsorting | Sorting | topic\navl | AVL | subtopic\n\n## Aliases\nignored | x | topic\n",
+        encoding="utf-8",
+    )
+    for qid, status, tags in (("a", "active", ["trees", "avl"]), ("b", "active", ["trees"]), ("c", "suspended", ["trees"])):
+        (tmp_path / "questions" / f"{qid}.json").write_text(
+            json.dumps({"id": qid, "status": status, "tags": tags}), encoding="utf-8"
+        )
+    (tmp_path / "corrections").mkdir()
+    (tmp_path / "corrections" / "log.jsonl").write_text(
+        json.dumps({"question_id": "b", "field": "status", "new_value": "suspended"}) + "\n", encoding="utf-8"
+    )
+    result = json.loads(tools.list_topics({}))
+    assert result["total"] == 3
+    assert [(t["slug"], t["active_questions"]) for t in result["topics"]] == [
+        ("avl", 1), ("trees", 1), ("sorting", 0)
+    ]
+    only = json.loads(tools.list_topics({"query": "tree", "level": "topic"}))
+    assert [t["slug"] for t in only["topics"]] == ["trees"]
+    assert "error" in json.loads(tools.list_topics({"level": "bogus"}))
+    assert "error" in json.loads(tools.list_topics({"unknown": 1}))

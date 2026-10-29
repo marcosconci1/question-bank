@@ -2,5 +2,5 @@ name: question-bank
 version: 1.0.0
 manifest_version: 1
 description: Real exam practice with answer-safe retrieval and optional attempt history.
-provides_tools: [search-questions, get-question, get-stats]
+provides_tools: [search-questions, get-question, get-stats, list-topics]
 provides_hooks: []

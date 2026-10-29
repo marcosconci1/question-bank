@@ -47,11 +47,14 @@ inventories and deterministic crop hashes.
 ## Configuration
 
 Configuration is read only from environment variables; no `.env` file is read
-by the module. `OPENROUTER_API_KEY` is required for indexing and querying.
+by the module. `OPENROUTER_API_KEY` is **optional**: without it, `query` uses
+keyword (BM25) search over the question files and `index` is a no-op. With a
+key and a running Qdrant, `query` ranks by meaning and falls back to keywords
+if either is down. `--mode semantic|lexical` forces one engine.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENROUTER_API_KEY` | — | OpenRouter credential for embeddings. |
+| `OPENROUTER_API_KEY` | — | Optional. OpenRouter credential for semantic embeddings. |
 | `QDRANT_URL` | `http://127.0.0.1:6343` | Dedicated question-bank Qdrant HTTP endpoint. |
 | `QUESTION_BANK_ROOT` | module root | Root containing `questions/` and optional `contexts/`. |
 | `QUESTION_BANK_STATE` | `~/.local/share/question-bank` | Parent directory for `ledger.json`. |

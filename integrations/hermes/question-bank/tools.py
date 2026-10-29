@@ -144,12 +144,12 @@ def search_questions(args: dict[str, Any], **kwargs: Any) -> str:
         return _error("question_bank_adapter_error", error_class=type(exc).__name__)
 
 
-def _apply_corrections(question: dict[str, Any]) -> dict[str, Any]:
-    """Apply corrections/log.jsonl (last entry per field wins). See question_bank.corrections."""
+def _load_fixes() -> dict[str, dict[str, Any]]:
+    """Read corrections/log.jsonl (last entry per field wins). See question_bank.corrections."""
     log = _bank_root() / "corrections" / "log.jsonl"
+    fixes: dict[str, dict[str, Any]] = {}
     if not log.is_file():
-        return question
-    fixes: dict[str, Any] = {}
+        return fixes
     for line in log.read_text(encoding="utf-8").splitlines():
         try:
             entry = json.loads(line)
@@ -157,13 +157,19 @@ def _apply_corrections(question: dict[str, Any]) -> dict[str, Any]:
             continue
         if (
             isinstance(entry, dict)
-            and entry.get("question_id") == question.get("id")
+            and isinstance(entry.get("question_id"), str)
             and isinstance(entry.get("field"), str)
             and entry["field"] not in {"id", "exam", "year", "number", "new-question"}
             and "new_value" in entry
         ):
-            fixes[entry["field"]] = entry["new_value"]
-    return {**question, **fixes}
+            fixes.setdefault(entry["question_id"], {})[entry["field"]] = entry["new_value"]
+    return fixes
+
+
+def _apply_corrections(question: dict[str, Any], fixes: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    fixes = _load_fixes() if fixes is None else fixes
+    fix = fixes.get(str(question.get("id")))
+    return {**question, **fix} if fix else question
 
 
 def _question_path(question_id: str) -> Path:
@@ -333,6 +339,56 @@ def get_stats(args: dict[str, Any], **kwargs: Any) -> str:
         return _error("question_bank_adapter_error", error_class=type(exc).__name__)
 
 
+def _registry() -> list[tuple[str, str, str]]:
+    """Return (slug, display name, level) rows from docs/tags.md."""
+    rows: list[tuple[str, str, str]] = []
+    in_registry = False
+    for raw in (_bank_root() / "docs" / "tags.md").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if line.startswith("## Registry"):
+            in_registry = True
+            continue
+        if in_registry and line.startswith("## "):
+            break
+        parts = [part.strip() for part in line.split("|")]
+        if in_registry and len(parts) == 3 and re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", parts[0]):
+            rows.append((parts[0], parts[1], parts[2]))
+    return rows
+
+
+def list_topics(args: dict[str, Any], **kwargs: Any) -> str:
+    """List registered topic tags with their active question counts."""
+    if not available():
+        return _error("question_bank_disabled")
+    if not isinstance(args, dict) or set(args) - {"query", "level", "limit"}:
+        return _error("invalid_question_request")
+    query, level, limit = args.get("query"), args.get("level"), args.get("limit", 40)
+    if query is not None and not isinstance(query, str):
+        return _error("invalid_question_request", field="query")
+    if level is not None and level not in {"area", "topic", "subtopic"}:
+        return _error("invalid_question_request", field="level")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+        return _error("invalid_question_request", field="limit")
+    try:
+        fixes = _load_fixes()
+        counts: dict[str, int] = defaultdict(int)
+        for path in (_bank_root() / "questions").glob("*.json"):
+            question = _apply_corrections(json.loads(path.read_text(encoding="utf-8")), fixes)
+            if question.get("status") == "active":
+                for tag in question.get("tags", []):
+                    counts[tag] += 1
+        needle = query.strip().lower() if query else ""
+        topics = [
+            {"slug": slug, "name": name, "level": lvl, "active_questions": counts.get(slug, 0)}
+            for slug, name, lvl in _registry()
+            if (not level or lvl == level) and needle in f"{slug} {name}".lower()
+        ]
+        topics.sort(key=lambda t: (-t["active_questions"], t["slug"]))
+        return json.dumps({"total": len(topics), "topics": topics[:limit]}, ensure_ascii=False)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return _error("question_bank_adapter_error", error_class=type(exc).__name__)
+
+
 def register(ctx: Any) -> None:
     """Register the complete read-only question-bank surface."""
     definitions = (
@@ -370,6 +426,17 @@ def register(ctx: Any) -> None:
                 },
             },
             ["id"],
+        ),
+        (
+            "list-topics",
+            "List registered topic tags (slug, name, level) with active question counts, to plan exercise lists.",
+            list_topics,
+            {
+                "query": {"type": "string", "description": "Case-insensitive text matched against slug and name."},
+                "level": {"type": "string", "enum": ["area", "topic", "subtopic"]},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 40},
+            },
+            [],
         ),
         (
             "get-stats",
