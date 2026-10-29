@@ -90,3 +90,14 @@ def test_correction_triggers_reindex_only_for_fixed_question(tmp_path):
     _log(tmp_path, {"question_id": "q1", "field": "answer", "new_value": "B"})
     again = ledger.reconcile(questions, ledger_path)
     assert [i["question_id"] for i in again["to_index"]] == ["q1"]
+
+
+def test_enade_2017_9_removes_leaked_pdf_operators_and_keeps_figure():
+    fixed = apply_corrections(
+        json.loads((MODULE_ROOT / "questions" / "enade-2017-9.json").read_text(encoding="utf-8")),
+        MODULE_ROOT,
+    )
+    assert fixed["stem"][0]["content"].startswith("Uma árvore AVL")
+    assert "Tm a DT Na ND" not in fixed["stem"][0]["content"]
+    assert fixed["stem"][1]["src"] == "assets/enade-2017-q09-stem-figure-1.png"
+    assert fixed["answer"] == "A"
