@@ -18,6 +18,19 @@ from typing import Any
 REQUIRED_FIELDS = ("id", "type", "exam", "year", "number", "stem", "source", "tags")
 POSCOMP_YEAR_RANGE = range(2002, 2026)
 ENADE_YEARS = frozenset({2005, 2008, 2011, 2014, 2017, 2021})
+CONCURSO_EXAMS = frozenset({"fgv", "iades", "cesgranrio", "fcpc"})
+VALID_EXAMS = frozenset({"poscomp", "enade"}) | CONCURSO_EXAMS
+CONCURSO_YEAR_RANGE = range(1990, 2031)
+SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+URL_RE = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
+PROHIBITED_SOURCE_HOSTS = (
+    "qconcursos.",
+    "grancursos",
+    "tecconcursos.",
+    "estudeplan.",
+    "certou.",
+    "pciconcursos.",
+)
 # These warnings indicate incomplete question text and keep a question out of
 # the active bank. Other warnings remain visible to curators but are advisory.
 SUSPENDING_WARNING_CODES = frozenset({"short_stem", "stem_ends_mid_sentence"})
@@ -171,22 +184,30 @@ def validate_question(
         _add(result, "id_filename_mismatch", "id does not match filename")
 
     exam = question.get("exam")
-    if exam not in {"poscomp", "enade"}:
-        _add(result, "invalid_exam", "exam must be 'poscomp' or 'enade'")
+    if exam not in VALID_EXAMS:
+        _add(
+            result,
+            "invalid_exam",
+            "exam must be one of 'poscomp', 'enade', 'fgv', 'iades', 'cesgranrio', or 'fcpc'",
+        )
 
     year = question.get("year")
-    valid_year = (
-        isinstance(year, int)
-        and not isinstance(year, bool)
-        and (year in ENADE_YEARS if exam == "enade" else year in POSCOMP_YEAR_RANGE)
-    )
+    if exam == "enade":
+        valid_year = isinstance(year, int) and not isinstance(year, bool) and year in ENADE_YEARS
+        allowed = "the supported ENADE editions"
+    elif exam in CONCURSO_EXAMS:
+        valid_year = isinstance(year, int) and not isinstance(year, bool) and year in CONCURSO_YEAR_RANGE
+        allowed = "the concurso 1990-2030 range"
+    else:
+        valid_year = isinstance(year, int) and not isinstance(year, bool) and year in POSCOMP_YEAR_RANGE
+        allowed = "the POSCOMP 2002-2025 range"
     if not valid_year:
-        allowed = "the supported ENADE editions" if exam == "enade" else "the POSCOMP 2002-2025 range"
         _add(result, "invalid_year", f"year must be an integer in {allowed}")
 
     number = question.get("number")
-    if not isinstance(number, int) or isinstance(number, bool) or not 1 <= number <= 100:
-        _add(result, "invalid_number", "number must be an integer from 1 through 100")
+    max_number = 150 if exam in CONCURSO_EXAMS else 100
+    if not isinstance(number, int) or isinstance(number, bool) or not 1 <= number <= max_number:
+        _add(result, "invalid_number", f"number must be an integer from 1 through {max_number}")
 
     question_type = question.get("type")
     if question_type not in {"mc", "discursive"}:
@@ -198,11 +219,13 @@ def validate_question(
 
     options = question.get("options")
     option_texts: list[str] = []
+    allowed_option_counts = {4, 5} if exam in CONCURSO_EXAMS else {5}
     if question_type == "mc":
         if "answer" not in question:
             _add(result, "missing_required_field", "missing required field: answer")
-        if not isinstance(options, list) or len(options) != 5:
-            _add(result, "invalid_option_count", "mc questions must have exactly 5 options")
+        if not isinstance(options, list) or len(options) not in allowed_option_counts:
+            expected_desc = "4 or 5 options" if exam in CONCURSO_EXAMS else "exactly 5 options"
+            _add(result, "invalid_option_count", f"mc questions must have {expected_desc}")
         else:
             for index, option in enumerate(options):
                 option_text = content_text(option)
@@ -214,7 +237,11 @@ def validate_question(
         answer = question.get("answer")
         if not isinstance(answer, str) or not re.fullmatch(r"[A-E]", answer):
             _add(result, "invalid_answer", "mc answer must be one uppercase letter from A through E")
-        elif isinstance(options, list) and len(options) == 5 and ord(answer) - ord("A") >= len(options):
+        elif (
+            isinstance(options, list)
+            and len(options) in allowed_option_counts
+            and ord(answer) - ord("A") >= len(options)
+        ):
             _add(result, "answer_out_of_range", "answer is outside the available option range")
         if "rubric" in question:
             _add(result, "forbidden_rubric", "mc questions must not include rubric")
@@ -231,8 +258,10 @@ def validate_question(
             _add(result, "invalid_component", "ENADE component must be 'general-education' or 'specific'")
         if question.get("course") != "computer-science":
             _add(result, "invalid_course", "ENADE course must be 'computer-science'")
+    elif exam in CONCURSO_EXAMS:
+        _validate_concurso_provenance(question, result)
 
-    if "context" in question:
+    if "context" in question and question["context"] is not None:
         context_id = question["context"]
         if not isinstance(context_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", context_id):
             _add(result, "invalid_context", "context must be a non-empty context id")
@@ -252,7 +281,9 @@ def validate_question(
     if stem:
         if len(stem) < 40:
             _add(result, "short_stem", "stem has fewer than 40 characters", "warning")
-        reviewed_complete = is_source_reviewed_complete_enade(question, path)
+        reviewed_complete = is_source_reviewed_complete_enade(question, path) or is_verified_concurso_record(
+            question, path
+        )
         if _ends_mid_sentence(stem) and not reviewed_complete:
             _add(result, "stem_ends_mid_sentence", "stem appears to end mid-sentence", "warning")
 
@@ -300,6 +331,120 @@ def is_source_reviewed_complete_enade(question: dict[str, Any], path: Path) -> b
         and isinstance(options, list)
         and len(options) == 5
         and question.get("answer") in set("ABCDE")
+    )
+
+
+def _valid_source_entry(url: Any, sha256: Any) -> bool:
+    if not isinstance(url, str) or not URL_RE.fullmatch(url.strip()):
+        return False
+    lowered = url.lower()
+    if any(host in lowered for host in PROHIBITED_SOURCE_HOSTS):
+        return False
+    return isinstance(sha256, str) and bool(SHA256_RE.fullmatch(sha256.strip()))
+
+
+def _validate_concurso_provenance(question: dict[str, Any], result: QuestionValidation) -> None:
+    """Validate required provenance metadata for public-service exam questions."""
+
+    provenance = question.get("provenance")
+    if not isinstance(provenance, dict) or not provenance:
+        _add(result, "missing_provenance", "concurso questions require a non-empty provenance object")
+        return
+
+    organ = provenance.get("organ") or provenance.get("orgao") or question.get("organ")
+    if not isinstance(organ, str) or not organ.strip():
+        _add(result, "invalid_provenance_organ", "concurso provenance requires a non-empty organ")
+
+    role = provenance.get("role") or provenance.get("cargo") or question.get("role")
+    roles = provenance.get("roles") or provenance.get("cargos")
+    valid_role = isinstance(role, str) and bool(role.strip())
+    valid_roles = (
+        isinstance(roles, list)
+        and bool(roles)
+        and all(isinstance(item, str) and bool(item.strip()) for item in roles)
+    )
+    if not (valid_role or valid_roles):
+        _add(result, "invalid_provenance_role", "concurso provenance requires a non-empty role or roles list")
+    elif roles is not None and not valid_roles:
+        _add(result, "invalid_provenance_role", "concurso provenance roles must be a non-empty list of strings")
+
+    exam_date = provenance.get("exam_date") or question.get("exam_date")
+    prov_year = provenance.get("year")
+    valid_exam_date = isinstance(exam_date, str) and bool(exam_date.strip())
+    valid_prov_year = (
+        isinstance(prov_year, int)
+        and not isinstance(prov_year, bool)
+        and prov_year in CONCURSO_YEAR_RANGE
+        and prov_year == question.get("year")
+    )
+    if not (valid_exam_date or valid_prov_year):
+        _add(result, "invalid_provenance_date", "concurso provenance requires a valid exam_date or matching year")
+    elif prov_year is not None and not valid_prov_year:
+        _add(result, "invalid_provenance_date", "concurso provenance year must match question year in 1990-2030")
+
+    caderno = provenance.get("caderno") or provenance.get("edition") or question.get("caderno")
+    cadernos = provenance.get("cadernos")
+    valid_caderno = isinstance(caderno, str) and bool(caderno.strip())
+    valid_cadernos = (
+        isinstance(cadernos, list)
+        and bool(cadernos)
+        and all(isinstance(item, str) and bool(item.strip()) for item in cadernos)
+    )
+    if not (valid_caderno or valid_cadernos):
+        _add(result, "invalid_provenance_caderno", "concurso provenance requires a non-empty caderno or edition")
+    elif cadernos is not None and not valid_cadernos:
+        _add(result, "invalid_provenance_caderno", "concurso provenance cadernos must be a non-empty list of strings")
+
+    sources = provenance.get("sources")
+    has_valid_sources = False
+    if isinstance(sources, list) and sources:
+        has_valid_sources = all(
+            isinstance(entry, dict) and _valid_source_entry(entry.get("url"), entry.get("sha256"))
+            for entry in sources
+        )
+    elif isinstance(sources, dict) and sources:
+        has_valid_sources = all(
+            isinstance(entry, dict) and _valid_source_entry(entry.get("url"), entry.get("sha256"))
+            for entry in sources.values()
+        )
+
+    prova_ok = _valid_source_entry(
+        provenance.get("prova_url") or provenance.get("source_url"),
+        provenance.get("prova_sha256") or provenance.get("source_sha256"),
+    )
+    gabarito_url = provenance.get("gabarito_url")
+    gabarito_sha = provenance.get("gabarito_sha256")
+    gabarito_ok = gabarito_url is None and gabarito_sha is None or _valid_source_entry(gabarito_url, gabarito_sha)
+
+    if not ((has_valid_sources and gabarito_ok) or (prova_ok and gabarito_ok)):
+        _add(
+            result,
+            "invalid_provenance_sources",
+            "concurso provenance requires official PDF source URLs and 64-hex sha256 digests",
+        )
+
+
+def is_verified_concurso_record(question: dict[str, Any], path: Path) -> bool:
+    """Return True when a concurso record has verified round-trip PDF extraction."""
+
+    exam = question.get("exam")
+    question_id = question.get("id")
+    provenance = question.get("provenance")
+    if (
+        exam not in CONCURSO_EXAMS
+        or not isinstance(question_id, str)
+        or question_id != path.stem
+        or not isinstance(provenance, dict)
+        or provenance.get("round_trip_verified") is not True
+    ):
+        return False
+    options = question.get("options")
+    return (
+        question.get("type") == "mc"
+        and isinstance(options, list)
+        and len(options) in {4, 5}
+        and isinstance(question.get("answer"), str)
+        and question["answer"] in "ABCDE"[: len(options)]
     )
 
 

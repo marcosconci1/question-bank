@@ -39,7 +39,11 @@ aprendizado-de-maquina | Aprendizado De Maquina | subtopic
 aritmetica-binaria | Aritmetica Binaria | subtopic
 arquitetura-e-organizacao-de-computadores | Arquitetura E Organizacao De Computadores | topic
 arquiteturas-risc-e-cisc | Arquiteturas Risc E Cisc | subtopic
+arvore-avl | Arvore Avl | subtopic
+arvore-b | Arvore B | subtopic
+arvore-b-mais | Arvore B+ | subtopic
 arvore-geradora | Arvore Geradora | subtopic
+arvore-rubro-negra | Arvore Rubro-Negra | subtopic
 arvores-de-decisao-redes-neurais-e-algoritmos-geneticos | Arvores De Decisao Redes Neurais E Algoritmos Geneticos | subtopic
 arvores-e-suas-generalizacoes-arvores-binarias-arvores-de-busca-e-arvores-balanceadas | Arvores E Suas Generalizacoes Arvores Binarias Arvores De Busca E Arvores Balanceadas | subtopic
 automatos-de-estados-finitos-deterministico-e-nao-deterministico | Automatos De Estados Finitos Deterministico E Nao Deterministico | subtopic
@@ -122,7 +126,11 @@ gradiente | Gradiente | subtopic
 grafos-orientados-e-nao-orientados | Grafos Orientados E Nao Orientados | subtopic
 gramaticas | Gramaticas | subtopic
 hierarquia-de-chomsky | Hierarquia De Chomsky | subtopic
+hash-encadeamento | Hash Com Encadeamento | subtopic
+hash-enderecamento-aberto | Hash Com Enderecamento Aberto | subtopic
+heap-fila-de-prioridade | Heap E Fila De Prioridade | subtopic
 hill-climbing-best-first-simulated-annealing-e-algoritmo-a | Hill Climbing Best First Simulated Annealing E Algoritmo A | subtopic
+indices-banco-de-dados | Indices De Banco De Dados | subtopic
 integracao-de-funcoes-reais-de-uma-variavel | Integracao De Funcoes Reais De Uma Variavel | subtopic
 integral-de-linha | Integral De Linha | subtopic
 inteligencia-artificial | Inteligencia Artificial | topic

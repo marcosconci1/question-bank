@@ -61,7 +61,7 @@ def write_question(directory: Path, question: dict, filename: str | None = None)
 
 def validate_one(tmp_path: Path, question: dict, filename: str | None = None):
     questions = tmp_path / "questions"
-    questions.mkdir()
+    questions.mkdir(parents=True, exist_ok=True)
     write_question(questions, question, filename)
     return validate_bank(questions, write_registry(tmp_path)).questions[0]
 
@@ -334,3 +334,86 @@ def test_update_reaudits_existing_fields_and_is_idempotent(tmp_path):
     second = subprocess.run(command, check=False, capture_output=True, text=True)
     assert second.returncode == 0, second.stderr
     assert {path: path.read_bytes() for path in questions.glob("*.json")} == after_first
+
+
+def make_concurso_question(
+    exam: str = "fgv",
+    question_id: str = "fgv-trf1-2024-analista-ti-45",
+) -> dict:
+    return {
+        "id": question_id,
+        "type": "mc",
+        "exam": exam,
+        "year": 2024,
+        "number": 45,
+        "stem": "Considere uma tabela hash com encadeamento para armazenamento de chaves.",
+        "options": ["alpha", "bravo", "charlie", "delta", "echo"],
+        "answer": "C",
+        "source": "FGV - TRF1 2024 (Analista de TI), questão 45",
+        "tags": ["matematica"],
+        "provenance": {
+            "banca": exam,
+            "organ": "TRF1",
+            "role": "Analista Judiciário - TI",
+            "roles": ["Analista Judiciário - TI"],
+            "year": 2024,
+            "exam_date": "2024-09-29",
+            "caderno": "Tipo 1",
+            "cadernos": ["Tipo 1"],
+            "gabarito_kind": "definitivo",
+            "prova_url": "https://conhecimento.fgv.br/sites/default/files/concursos/30.pdf",
+            "prova_sha256": "a" * 64,
+            "gabarito_url": "https://conhecimento.fgv.br/sites/default/files/concursos/gab.pdf",
+            "gabarito_sha256": "b" * 64,
+            "sources": [
+                {
+                    "kind": "prova",
+                    "url": "https://conhecimento.fgv.br/sites/default/files/concursos/30.pdf",
+                    "sha256": "a" * 64,
+                },
+                {
+                    "kind": "definitivo",
+                    "url": "https://conhecimento.fgv.br/sites/default/files/concursos/gab.pdf",
+                    "sha256": "b" * 64,
+                },
+            ],
+            "round_trip_verified": True,
+        },
+    }
+
+
+@pytest.mark.parametrize("exam", ["fgv", "iades", "cesgranrio", "fcpc"])
+def test_concurso_exams_validate_with_4_or_5_options_and_provenance(tmp_path, exam):
+    q5 = make_concurso_question(exam=exam, question_id=f"{exam}-org-2024-ti-01")
+    r5 = validate_one(tmp_path / f"{exam}-5", q5)
+    assert r5.format_clean
+    assert not r5.warnings
+
+    q4 = make_concurso_question(exam=exam, question_id=f"{exam}-org-2010-ti-02")
+    q4["year"] = 2010
+    q4["provenance"]["year"] = 2010
+    q4["options"] = ["alpha", "bravo", "charlie", "delta"]
+    q4["answer"] = "D"
+    r4 = validate_one(tmp_path / f"{exam}-4", q4)
+    assert r4.format_clean
+
+
+def test_concurso_validation_rejects_missing_or_invalid_provenance_and_bad_years(tmp_path):
+    no_prov = make_concurso_question()
+    no_prov.pop("provenance")
+    assert "missing_provenance" in codes(validate_one(tmp_path / "no-prov", no_prov))
+
+    bad_year = make_concurso_question()
+    bad_year["year"] = 1989
+    assert "invalid_year" in codes(validate_one(tmp_path / "bad-year", bad_year))
+
+    bad_ans = make_concurso_question()
+    bad_ans["options"] = ["alpha", "bravo", "charlie", "delta"]
+    bad_ans["answer"] = "E"
+    assert "answer_out_of_range" in codes(validate_one(tmp_path / "bad-ans", bad_ans))
+
+    bad_src = make_concurso_question()
+    bad_src["provenance"]["prova_url"] = "https://www.qconcursos.com/questoes/123"
+    bad_src["provenance"]["sources"][0]["url"] = "https://www.qconcursos.com/questoes/123"
+    assert "invalid_provenance_sources" in codes(validate_one(tmp_path / "bad-src", bad_src))
+

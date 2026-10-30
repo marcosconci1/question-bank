@@ -15,8 +15,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
 from question_bank.validate import (
+    CONCURSO_EXAMS,
     SOURCE_COMPLETE_ENADE_IDS,
     is_source_reviewed_complete_enade,
+    is_verified_concurso_record,
     issue_codes,
     suspending_warning_codes,
     validate_bank,
@@ -53,6 +55,17 @@ def curation_reasons(result) -> list[str]:
 
     reasons = suspending_warning_codes(result.warnings)
     question = result.question
+    if question.get("exam") in CONCURSO_EXAMS:
+        provenance = question.get("provenance") or {}
+        question_path = getattr(result, "path", Path(f"{question.get('id')}.json"))
+        if is_verified_concurso_record(question, question_path):
+            reasons = [reason for reason in reasons if reason != "stem_ends_mid_sentence"]
+        if (
+            provenance.get("gabarito_kind") == "preliminar"
+            or question.get("status_reason") == "preliminary_answer_key"
+        ) and "preliminary_answer_key" not in reasons:
+            reasons.append("preliminary_answer_key")
+        return reasons
     if question.get("exam") != "enade":
         return reasons
     question_id = question.get("id")
