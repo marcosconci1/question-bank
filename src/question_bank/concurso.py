@@ -196,11 +196,14 @@ def strip_page_noise(page_text: str, banca: str) -> str:
                     "controladoria-geral da uniao",
                     "controladoria geral da uniao",
                     "empresa de tecnologia e informacoes da previdencia",
+                    "dataprev - empresa de tecnologia",
                     "concurso publico",
                     "banco do estado do espirito santo",
                     "banestes",
                 )
             ):
+                continue
+            if folded == "realizacao" or re.search(r"[-–—]\s*(tarde|manha)$", folded) and len(s) < 90 and not s.endswith("."):
                 continue
             # Role header line in FGV typically appears right above/below FGV Conhecimento
             if (
@@ -363,7 +366,7 @@ def _check_quarantine(
         return "short_stem", False
     for idx, opt in enumerate(options):
         if not opt or not opt.strip():
-            return f"empty_option_{idx}", False
+            return "needs_visual_asset", False
     combined = f"{stem}\n" + "\n".join(options)
     for pat in PDF_OPERATOR_PATTERNS:
         if pat.search(combined):
@@ -1147,6 +1150,7 @@ TOPIC_RULES: tuple[TopicRule, ...] = (
             re.compile(r"\bordenacao\s+topologica\b"),
             re.compile(r"\bgrafos?\s+(direcionad\w*|orientad\w*|ponderad\w*|aciclic\w*|conexo\w*|bipartid\w*)\b"),
             re.compile(r"\b(matriz\s+de\s+adjacencia\w*|lista\s+de\s+adjacencia\w*)\b"),
+            re.compile(r"\b(orientad\w+\s+a\s+grafos?|banco\s+de\s+dados\s+de\s+grafos?)\b[\s\S]{0,80}\b(nos\s+e\s+arestas|vertices\s+e\s+arestas)\b"),
         ),
         tags=(
             "fundamentos-da-computacao",

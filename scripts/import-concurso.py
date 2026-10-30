@@ -272,15 +272,17 @@ def run_import(
                     continue
 
                 status = "active" if gabarito_kind == "definitivo" else "suspended"
+                p_url = str(prova["url"]).replace(" ", "%20")
+                g_url = str(gab_entry["url"]).replace(" ", "%20")
                 sources_list = [
                     {
                         "kind": "prova",
-                        "url": prova["url"],
+                        "url": p_url,
                         "sha256": prova["sha256"],
                     },
                     {
                         "kind": gab_entry["kind"],
-                        "url": gab_entry["url"],
+                        "url": g_url,
                         "sha256": gab_entry["sha256"],
                     },
                 ]
@@ -308,9 +310,9 @@ def run_import(
                         "gabarito_kind": gabarito_kind,
                         "round_trip_verified": True,
                         "matched_rules": matched_rules,
-                        "prova_url": prova["url"],
+                        "prova_url": p_url,
                         "prova_sha256": prova["sha256"],
-                        "gabarito_url": gab_entry["url"],
+                        "gabarito_url": g_url,
                         "gabarito_sha256": gab_entry["sha256"],
                         "sources": sources_list,
                     },
