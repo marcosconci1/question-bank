@@ -73,6 +73,9 @@ def test_strip_page_noise_per_banca() -> None:
     assert "Área livre" not in cleaned_iades
     assert "QUESTÃO 26" in cleaned_iades
 
+    iades_footer_page = "(E) Inserir key na árvore binária.\nCONCURSO PÚBLICO – BRB"
+    assert strip_page_noise(iades_footer_page, "iades") == "(E) Inserir key na árvore binária."
+
     cesgranrio_page = (
         "12\n"
         "BANCO DO BRASIL\n"
@@ -87,6 +90,9 @@ def test_strip_page_noise_per_banca() -> None:
     assert "GABARITO 1" not in cleaned_cesg
     assert "RASCUNHO" not in cleaned_cesg
     assert "41" in cleaned_cesg
+
+    cesgranrio_footer_page = "(E) Quicksort - DESENVOLVIMENTO\nMANHÃ"
+    assert strip_page_noise(cesgranrio_footer_page, "cesgranrio") == "(E) Quicksort"
 
     fcpc_page = (
         "Concurso UFC - Edital 01/2024\n"

@@ -166,6 +166,19 @@ def is_cover_or_non_question_page(page_text: str, banca: str, page_index: int) -
             return True
         if len(folded_lines) <= 6 and any("rascunho" in ln for ln in folded_lines):
             return True
+    if banca == "iades":
+        if not re.search(r"\bquestao\s+\d{1,3}\b", folded):
+            if any(
+                kw in folded
+                for kw in (
+                    "p r o v a d i s c u r s i v a",
+                    "prova discursiva",
+                    "q u e s t a o d i s c u r s i v a",
+                    "figura ampliada do texto",
+                    "rascunho",
+                )
+            ):
+                return True
     return False
 
 
@@ -231,8 +244,24 @@ def strip_page_noise(page_text: str, banca: str) -> str:
             if not s:
                 continue
             folded = fold_accents(s)
-            if folded in ("prova aplicada", "area livre", "concurso publico"):
+            if any(
+                stop_kw in folded
+                for stop_kw in (
+                    "p r o v a d i s c u r s i v a",
+                    "q u e s t a o d i s c u r s i v a",
+                    "figura ampliada do texto",
+                    "concurso publico cp-",
+                )
+            ):
+                break
+            if folded in ("prova aplicada", "area livre", "concurso publico") or folded.startswith("concurso publico"):
                 continue
+            # IADES repeats this footer directly after the final option on some pages.
+            # Keep the option text, but never let the next-page header become part of it.
+            s = re.split(r"\s+CONCURSO\s+P[ÚU]BLICO\b", s, maxsplit=1, flags=re.IGNORECASE)[0].strip()
+            if not s:
+                continue
+            folded = fold_accents(s)
             if re.match(r"^p[aá]gina\s+\d+\s*/\s*\d+$", folded):
                 continue
             if re.match(r"^\d{3}\s*[-–—]\s*", s) and len(s) < 95:
@@ -270,6 +299,19 @@ def strip_page_noise(page_text: str, banca: str) -> str:
                 continue
             if re.match(r"^prova\s+[a-z0-9]+\b", folded) and len(s) < 100 and not s.endswith("."):
                 continue
+            if re.match(r"^(?:-\s*)?(?:[a-z]+\s+)*(?:desenvolvimento\s+)?(?:manha|tarde|desenvolvimento)$", folded):
+                continue
+            # BNDES booklets append the role and session after the final option.
+            # It is a page footer, not answer text.
+            s = re.sub(
+                r"\s+-\s+(?:[A-ZÁÉÍÓÚÇ]+\s+)*(?:MANH[ÃA]|TARDE)\b.*$",
+                "",
+                s,
+            )
+            s = re.sub(r"\s+-\s+DESENVOLVIMENTO\s*$", "", s).strip()
+            if not s:
+                continue
+            folded = fold_accents(s)
             if re.match(r"^cargo\s+\d+\b", folded) and len(s) < 100 and not s.endswith("."):
                 continue
             if any(
