@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from question_bank.validate import ValidationIssue
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "promote-curation.py"
@@ -137,6 +139,8 @@ def test_source_review_keeps_incomplete_stems_suspended_with_specific_reasons():
 
 def test_source_review_report_covers_all_32_requested_records():
     report_path = SCRIPT.parents[1] / "reports" / "enade-cc-suspended-review.json"
+    if not report_path.is_file():
+        pytest.skip("bank data not present (engine repo tests run on synthetic fixtures)")
     report = json.loads(report_path.read_text(encoding="utf-8"))
     reviewed_ids = {item["id"] for item in report["items"]}
     assert len(reviewed_ids) == 32

@@ -1,12 +1,20 @@
 """Corrections overlay: fixes apply on read, source files stay untouched."""
 import importlib.util
 import json
+import os
 from pathlib import Path
+
+import pytest
 
 from question_bank.corrections import apply_corrections, load_corrections
 from question_bank.validate import load_registered_tags, validate_question
 
-MODULE_ROOT = Path(__file__).resolve().parents[1]
+MODULE_ROOT = Path(os.environ.get("QUESTION_BANK_ROOT", Path(__file__).resolve().parents[1]))
+
+requires_bank = pytest.mark.skipif(
+    not (MODULE_ROOT / "questions").is_dir(),
+    reason="bank data not present (engine repo tests run on synthetic fixtures)",
+)
 
 
 def _log(root: Path, *entries: dict) -> None:
@@ -55,6 +63,7 @@ def test_plugin_matches_module_overlay(tmp_path, monkeypatch):
     assert tools._apply_corrections(question) == apply_corrections(question, tmp_path)
 
 
+@requires_bank
 def test_real_log_entries_yield_valid_questions():
     registered = load_registered_tags(MODULE_ROOT / "docs" / "tags.md")
     for qid in load_corrections(MODULE_ROOT):
@@ -63,6 +72,7 @@ def test_real_log_entries_yield_valid_questions():
         assert not validate_question(fixed, path, registered).errors, qid
 
 
+@requires_bank
 def test_enade_2014_13_has_all_numerals():
     fixed = apply_corrections(
         json.loads((MODULE_ROOT / "questions" / "enade-2014-13.json").read_text(encoding="utf-8")),
@@ -92,6 +102,7 @@ def test_correction_triggers_reindex_only_for_fixed_question(tmp_path):
     assert [i["question_id"] for i in again["to_index"]] == ["q1"]
 
 
+@requires_bank
 def test_enade_2017_9_removes_leaked_pdf_operators_and_keeps_figure():
     fixed = apply_corrections(
         json.loads((MODULE_ROOT / "questions" / "enade-2017-9.json").read_text(encoding="utf-8")),
