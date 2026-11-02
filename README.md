@@ -71,7 +71,7 @@ through the environment used to run the command.
 
 ```bash
 cd modules/question-bank
-uv sync
+uv sync --locked
 
 # Start the isolated vector database (create its external volume once if needed).
 docker volume create question-bank-qdrant-data
@@ -91,11 +91,11 @@ uv run python scripts/promote-curation.py --exam enade --update
 uv run python scripts/adapters/enade-cc-pdf.py --dry-run --report /tmp/enade-cc-runtime.json
 
 # Run one edition's source-backed oracle (2005, 2008, 2011, 2014, 2017, or 2021).
-./.venv/bin/python -m pytest 'tests/test-enade-adapter.py::test_generic_year_normalization_matches_all_audited_editions[2014]' -q
+uv run python -m pytest 'tests/test-enade-adapter.py::test_generic_year_normalization_matches_all_audited_editions[2014]' -q
 
 # Run validation coverage and the complete automated suite.
 uv run python -m pytest tests/test-validate.py -q
-./.venv/bin/python -m pytest tests/ -q
+uv run --extra web pytest tests/ -q
 
 # Serve the read-only MCP interface over stdio.
 uv run question-bank-mcp

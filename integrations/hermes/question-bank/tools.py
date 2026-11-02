@@ -53,7 +53,7 @@ def _bank_root() -> Path:
 
 
 def _cli_binary() -> Path:
-    return Path(os.environ.get("QUESTION_SEARCH_BIN", str(ROOT / ".venv/bin/question-search")))
+    return Path(os.environ.get("QUESTION_SEARCH_BIN", str(ROOT / "question-search.sh")))
 
 
 def _run_cli(command: str, arguments: list[str]) -> dict[str, Any]:

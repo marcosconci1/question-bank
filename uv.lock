@@ -834,12 +834,14 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-dev = [
-    { name = "pytest" },
-]
 web = [
     { name = "starlette" },
     { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
 ]
 
 [package.metadata]
@@ -847,12 +849,14 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp", specifier = ">=2.3.0" },
     { name = "pymupdf", specifier = ">=1.28.2" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "qdrant-client", specifier = ">=1.12.0" },
     { name = "starlette", marker = "extra == 'web'", specifier = ">=0.40" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "web"]
+provides-extras = ["web"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0.0" }]
 
 [[package]]
 name = "referencing"

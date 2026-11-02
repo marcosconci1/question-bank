@@ -24,7 +24,7 @@ When the plugin remains in this module, it finds `question-search`,
 deployment must set portable paths in its service environment:
 
 ```ini
-QUESTION_SEARCH_BIN=/path/to/question-bank/.venv/bin/question-search
+QUESTION_SEARCH_BIN=/path/to/question-bank/question-search.sh
 QUESTION_BANK_ROOT=/path/to/question-bank
 ```
 
@@ -64,3 +64,7 @@ The recorder derives exam, year, tags, and timestamp, writes one JSON object
 per line to `data/users/<user>/answers.jsonl` (default user `marcos`), and rejects duplicate
 `(question_id, session_id)` attempts. It never changes question files. The log
 is runtime data and remains outside Git.
+
+The default `question-search.sh` launcher runs the module through `uv`; ensure
+`uv` is on the Hermes gateway PATH. `QUESTION_SEARCH_BIN` can select an alternate
+launcher with the same CLI contract.

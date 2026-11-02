@@ -16,9 +16,6 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=8.0.0",
-]
 web = [
     "starlette>=0.40",
     "uvicorn>=0.30",
@@ -37,4 +34,9 @@ testpaths = ["tests"]
 python_files = ["test-*.py", "test_*.py"]
 markers = [
     "integration: marks tests requiring a running Qdrant instance",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
 ]
