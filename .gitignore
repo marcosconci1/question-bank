@@ -9,3 +9,11 @@ build/
 .ruff_cache/
 graphify-out/
 data/
+# Bank data never lives in the engine repo
+/questions/
+/assets/
+/corrections/
+/reports/
+/data/
+/bank/
+*.pdf
