@@ -10,6 +10,7 @@ from question_bank.corrections import apply_corrections, load_corrections
 from question_bank.validate import load_registered_tags, validate_question
 
 MODULE_ROOT = Path(os.environ.get("QUESTION_BANK_ROOT", Path(__file__).resolve().parents[1]))
+ENGINE_ROOT = Path(__file__).resolve().parents[1]
 
 requires_bank = pytest.mark.skipif(
     not (MODULE_ROOT / "questions").is_dir(),
@@ -52,7 +53,7 @@ def test_no_log_is_a_noop(tmp_path):
 
 def test_plugin_matches_module_overlay(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location(
-        "qb_tools", MODULE_ROOT / "integrations" / "hermes" / "question-bank" / "tools.py"
+        "qb_tools", ENGINE_ROOT / "integrations" / "hermes" / "question-bank" / "tools.py"
     )
     tools = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tools)
