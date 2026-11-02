@@ -13,6 +13,9 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
+_DEFAULT_BANK = Path(
+    os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+) / "question-bank"
 MAX_LIMIT = 50
 DEFAULT_USER = "marcos"
 _USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
@@ -49,7 +52,7 @@ def _error(code: str, **details: Any) -> str:
 
 
 def _bank_root() -> Path:
-    return Path(os.environ.get("QUESTION_BANK_ROOT", str(ROOT))).resolve()
+    return Path(os.environ.get("QUESTION_BANK_ROOT", str(_DEFAULT_BANK))).resolve()
 
 
 def _cli_binary() -> Path:

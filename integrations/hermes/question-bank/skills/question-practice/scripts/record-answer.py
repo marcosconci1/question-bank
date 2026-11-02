@@ -12,7 +12,9 @@ from typing import Any
 import uuid
 
 
-DEFAULT_ROOT = Path(__file__).resolve().parents[6]
+DEFAULT_ROOT = Path(
+    os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
+) / "question-bank"
 DEFAULT_USER = "marcos"
 _USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 REQUIRED = {"question_id", "session_id", "given_answer", "is_correct"}
