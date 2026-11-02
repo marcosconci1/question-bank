@@ -11,6 +11,21 @@ in this module's dedicated Qdrant instance.
 The module owns its bank and retrieval state. It does not share a Qdrant
 container, collection, volume, or ledger with other modules.
 
+## Layout (engine vs bank)
+
+This repo is the **engine**: code, tests, integrations, and profiles only.
+No question text, assets, or user data live here. The **bank** (questions,
+assets, corrections, answer logs, raw PDFs, reports) lives outside, resolved
+by `question_bank.paths.resolve_bank_root()`:
+
+1. `QUESTION_BANK_ROOT` if set, else
+2. `$XDG_DATA_HOME/question-bank` (default `~/.local/share/question-bank`).
+
+The bank directory holds `questions/`, `assets/`, `corrections/log.jsonl`,
+`data/users/`, `reports/`, `docs/tags.md`, `data/raw/`, and owner-only
+extraction scripts. Never commit bank data into this repo; `.gitignore`
+guards the usual paths.
+
 ## Status
 
 Implemented and migrated into `hermes-modules`. The bank contains 1,375
@@ -70,7 +85,7 @@ through the environment used to run the command.
 ## Usage
 
 ```bash
-cd modules/question-bank
+cd ~/question-bank
 uv sync --locked
 
 # Start the isolated vector database (create its external volume once if needed).
