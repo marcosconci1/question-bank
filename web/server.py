@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import random
+import re
 import sys
 from typing import Any
 import uuid
@@ -106,6 +107,31 @@ def _validate_user_or_response(user: str, root: Path) -> Response | None:
             {"error": "user_not_found", "message": f"User '{user}' not found"}, status_code=404
         )
     return None
+
+
+_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+TOPIC_LEVELS = ("area", "topic", "subtopic")
+
+
+def _load_registry(root: Path) -> list[tuple[str, str, str]]:
+    """Return (slug, display name, level) rows from the bank's docs/tags.md."""
+    try:
+        text = (root / "docs" / "tags.md").read_text(encoding="utf-8")
+    except OSError:
+        return []
+    rows: list[tuple[str, str, str]] = []
+    in_registry = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("## Registry"):
+            in_registry = True
+            continue
+        if in_registry and line.startswith("## "):
+            break
+        parts = [part.strip() for part in line.split("|")]
+        if in_registry and len(parts) == 3 and _SLUG_RE.fullmatch(parts[0]):
+            rows.append((parts[0], parts[1], parts[2]))
+    return rows
 
 
 def create_app(bank_root: Path | None = None) -> Starlette:
@@ -430,6 +456,46 @@ def create_app(bank_root: Path | None = None) -> Starlette:
                 status_code=503,
             )
 
+    async def get_topics(request: Request) -> Response:
+        level = request.query_params.get("level")
+        if level is not None and level not in TOPIC_LEVELS:
+            return JSONResponse({"error": "invalid_level"}, status_code=400)
+        limit_raw = request.query_params.get("limit")
+        limit = 200
+        if limit_raw is not None:
+            try:
+                limit = int(limit_raw)
+            except ValueError:
+                return JSONResponse({"error": "invalid_limit"}, status_code=400)
+            if not 1 <= limit <= 500:
+                return JSONResponse({"error": "invalid_limit"}, status_code=400)
+
+        questions, _ = bank.get_questions()
+        totals: dict[str, int] = defaultdict(int)
+        years: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+        for q in questions:
+            if q.get("status") != "active":
+                continue
+            year = q.get("year")
+            for tag in q.get("tags") or []:
+                totals[tag] += 1
+                if isinstance(year, int) and not isinstance(year, bool):
+                    years[tag][year] += 1
+
+        topics = [
+            {
+                "slug": slug,
+                "name": name,
+                "level": lvl,
+                "active_questions": totals.get(slug, 0),
+                "by_year": {str(y): c for y, c in sorted(years.get(slug, {}).items())},
+            }
+            for slug, name, lvl in _load_registry(root)
+            if level is None or lvl == level
+        ]
+        topics.sort(key=lambda t: (-t["active_questions"], t["slug"]))
+        return JSONResponse({"total": len(topics), "topics": topics[:limit]})
+
     routes = [
         Route("/", endpoint=index),
         Route("/api/users", endpoint=get_users, methods=["GET"]),
@@ -441,6 +507,7 @@ def create_app(bank_root: Path | None = None) -> Starlette:
         Route("/api/u/{user:str}/session/{session_id:str}", endpoint=get_session, methods=["GET"]),
         Route("/api/u/{user:str}/stats", endpoint=get_stats, methods=["GET"]),
         Route("/api/search", endpoint=search, methods=["GET"]),
+        Route("/api/topics", endpoint=get_topics, methods=["GET"]),
         Route("/assets/{path:path}", endpoint=serve_asset, methods=["GET"]),
         Mount("/static", app=StaticFiles(directory=STATIC_DIR), name="static"),
     ]
