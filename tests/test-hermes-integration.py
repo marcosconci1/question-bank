@@ -136,3 +136,28 @@ def test_list_topics_counts_only_active_questions_and_applies_corrections(monkey
     assert [t["slug"] for t in only["topics"]] == ["trees"]
     assert "error" in json.loads(tools.list_topics({"level": "bogus"}))
     assert "error" in json.loads(tools.list_topics({"unknown": 1}))
+
+
+def test_list_topics_reports_active_question_counts_by_year(monkeypatch, tmp_path):
+    tools = load_tools(monkeypatch)
+    monkeypatch.setenv("QUESTION_BANK_ROOT", str(tmp_path))
+    (tmp_path / "questions").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "tags.md").write_text(
+        "# Tags\n\n## Registry (seeded)\n\ntrees | Trees | topic\n", encoding="utf-8"
+    )
+    questions = (
+        {"id": "early", "status": "active", "year": 2020, "tags": ["trees"]},
+        {"id": "late", "status": "active", "year": 2023, "tags": ["trees"]},
+        {"id": "missing-year", "status": "active", "tags": ["trees"]},
+        {"id": "inactive", "status": "suspended", "year": 2024, "tags": ["trees"]},
+    )
+    for question in questions:
+        (tmp_path / "questions" / f"{question['id']}.json").write_text(
+            json.dumps(question), encoding="utf-8"
+        )
+
+    result = json.loads(tools.list_topics({}))
+    topic = result["topics"][0]
+    assert topic["active_questions"] == 3
+    assert topic["by_year"] == {"2020": 1, "2023": 1}

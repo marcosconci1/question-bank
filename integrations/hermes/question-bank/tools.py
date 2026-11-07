@@ -375,14 +375,26 @@ def list_topics(args: dict[str, Any], **kwargs: Any) -> str:
     try:
         fixes = _load_fixes()
         counts: dict[str, int] = defaultdict(int)
+        year_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
         for path in (_bank_root() / "questions").glob("*.json"):
             question = _apply_corrections(json.loads(path.read_text(encoding="utf-8")), fixes)
             if question.get("status") == "active":
+                year = question.get("year")
                 for tag in question.get("tags", []):
                     counts[tag] += 1
+                    if isinstance(year, int) and not isinstance(year, bool):
+                        year_counts[tag][year] += 1
         needle = query.strip().lower() if query else ""
         topics = [
-            {"slug": slug, "name": name, "level": lvl, "active_questions": counts.get(slug, 0)}
+            {
+                "slug": slug,
+                "name": name,
+                "level": lvl,
+                "active_questions": counts.get(slug, 0),
+                "by_year": {
+                    str(year): count for year, count in sorted(year_counts.get(slug, {}).items())
+                },
+            }
             for slug, name, lvl in _registry()
             if (not level or lvl == level) and needle in f"{slug} {name}".lower()
         ]
