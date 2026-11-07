@@ -483,3 +483,72 @@ header.masthead {
   margin-top: 2rem;
   text-align: center;
 }
+
+/* Topics screen */
+.topic-filter {
+  margin: 1rem 0;
+}
+
+.topic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.topic-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 0.85rem 1.1rem;
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 4px;
+}
+
+.topic-info {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.topic-name {
+  color: var(--heading);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.topic-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.topic-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 2.4rem;
+}
+
+.topic-bar {
+  width: 100%;
+  background: var(--quiet);
+  border: 1px solid var(--panel-edge);
+}
+
+.topic-bar-count {
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.topic-bar-year {
+  color: var(--quiet);
+  font-size: 0.75rem;
+}
+
+.topic-practice {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--heading);
+}
