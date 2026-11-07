@@ -42,6 +42,7 @@ All API endpoints return JSON payloads.
 | `GET` | `/api/u/{user}/session/{session_id}` | Retrieve recorded attempts for a session |
 | `GET` | `/api/u/{user}/stats` | Retrieve overall accuracy, worst-first topic breakdowns, and 182-day activity data |
 | `GET` | `/api/search` | Semantic vector search query (`q`, `exam`, `year`, `tag`, `limit`). Returns 503 if Qdrant or embedding is offline |
+| `GET` | `/api/topics` | Registered topics (`docs/tags.md`) with active question counts and per-year `by_year`; optional `level` (`area`, `topic`, `subtopic`) and `limit` (1-500, default 200); sorted by count desc, then slug; invalid params return 400 |
 
 ## Security
 
