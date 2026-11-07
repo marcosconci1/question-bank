@@ -68,6 +68,21 @@ def web_bank(tmp_path):
     for q in (q1, q2, q3):
         (questions_dir / f"{q['id']}.json").write_text(json.dumps(q), encoding="utf-8")
 
+    # Topic registry (docs/tags.md). "concurrency" is deliberately unregistered.
+    docs_dir = tmp_path / "docs"
+    docs_dir.mkdir(parents=True)
+    (docs_dir / "tags.md").write_text(
+        "# Tag Taxonomy\n\n"
+        "## Registry (seeded)\n\n"
+        "databases | Databases | area\n"
+        "sql | SQL Language | subtopic\n"
+        "networks | Networks | topic\n"
+        "algebra-linear | Algebra Linear | topic\n"
+        "\n## Aliases\n\n"
+        "ignored-after-registry | Ignored | area\n",
+        encoding="utf-8",
+    )
+
     return tmp_path, (q1, q2, q3)
 
 
@@ -344,3 +359,85 @@ def test_security_headers_and_assets(web_bank):
     # Asset traversal protection
     traversal_res = client.get("/assets/../../etc/passwd")
     assert traversal_res.status_code in (404, 400)
+
+
+def _write_question(root, qid, year, tags, status="active"):
+    q = {
+        "id": qid, "exam": "poscomp", "year": year, "number": 1, "type": "mc",
+        "status": status, "stem": "s", "options": ["a", "b"], "answer": "A", "tags": tags,
+    }
+    (root / "questions" / f"{qid}.json").write_text(json.dumps(q), encoding="utf-8")
+
+
+def test_topics_shape_sort_and_registry_mapping(web_bank):
+    root, _ = web_bank
+    _write_question(root, "poscomp-2021-09", 2021, ["sql"])
+    _write_question(root, "poscomp-2022-09", 2022, ["sql"])
+    client = TestClient(create_app(root))
+
+    res = client.get("/api/topics")
+    assert res.status_code == 200
+    body = res.json()
+    topics = body["topics"]
+    assert body["total"] == len(topics) == 4
+    assert set(topics[0]) == {"slug", "name", "level", "active_questions", "by_year"}
+
+    # sql: 3 active (q?: databases/sql from q1 + 2 new), databases: 2, ties by slug asc.
+    assert [t["slug"] for t in topics] == ["sql", "databases", "algebra-linear", "networks"]
+    by_slug = {t["slug"]: t for t in topics}
+    assert by_slug["sql"]["name"] == "SQL Language"
+    assert by_slug["sql"]["level"] == "subtopic"
+    assert by_slug["databases"]["level"] == "area"
+    assert by_slug["sql"]["active_questions"] == 3
+    assert list(by_slug["sql"]["by_year"].items()) == [("2021", 1), ("2022", 1), ("2024", 1)]
+    assert by_slug["databases"]["by_year"] == {"2021": 1, "2024": 1}
+
+
+def test_topics_excludes_suspended_and_unregistered(web_bank):
+    root, _ = web_bank
+    client = TestClient(create_app(root))
+    by_slug = {t["slug"]: t for t in client.get("/api/topics").json()["topics"]}
+
+    # networks only has a suspended question: listed (registered) but zero count.
+    assert by_slug["networks"]["active_questions"] == 0
+    assert by_slug["networks"]["by_year"] == {}
+    # concurrency is used by an active question but is not in the registry.
+    assert "concurrency" not in by_slug
+    # Rows after the Registry section are ignored.
+    assert "ignored-after-registry" not in by_slug
+
+
+def test_topics_level_and_limit_filters(web_bank):
+    root, _ = web_bank
+    client = TestClient(create_app(root))
+
+    res = client.get("/api/topics", params={"level": "topic"})
+    assert res.status_code == 200
+    assert {t["level"] for t in res.json()["topics"]} == {"topic"}
+    assert res.json()["total"] == 2
+
+    res = client.get("/api/topics", params={"limit": 1})
+    body = res.json()
+    assert body["total"] == 4
+    assert len(body["topics"]) == 1
+    assert body["topics"][0]["slug"] == "databases"
+
+    res = client.get("/api/topics", params={"level": "topic", "limit": 1})
+    assert res.json()["total"] == 2
+    assert len(res.json()["topics"]) == 1
+
+
+def test_topics_invalid_params_and_missing_registry(web_bank):
+    root, _ = web_bank
+    client = TestClient(create_app(root))
+
+    res = client.get("/api/topics", params={"level": "galaxy"})
+    assert res.status_code == 400
+    assert res.json() == {"error": "invalid_level"}
+    for bad in ("0", "501", "abc", "-3"):
+        assert client.get("/api/topics", params={"limit": bad}).status_code == 400
+
+    (root / "docs" / "tags.md").unlink()
+    res = client.get("/api/topics")
+    assert res.status_code == 200
+    assert res.json() == {"total": 0, "topics": []}
