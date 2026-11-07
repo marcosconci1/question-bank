@@ -1122,6 +1122,132 @@
     app.appendChild(list);
   }
 
+  // --- TOPICS SCREEN ---
+  async function fetchTopics(level) {
+    try {
+      const query = level ? `?level=${encodeURIComponent(level)}` : '';
+      const res = await fetch(`/api/topics${query}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {}
+    return {total: 0, topics: []};
+  }
+
+  function renderTopicBars(byYear) {
+    const bars = document.createElement('div');
+    bars.className = 'topic-bars';
+    const entries = Object.entries(byYear || {});
+    const max = Math.max(1, ...entries.map(([, count]) => count));
+    for (const [year, count] of entries) {
+      const col = document.createElement('div');
+      col.className = 'topic-bar-col';
+      const num = document.createElement('span');
+      num.className = 'topic-bar-count';
+      num.textContent = String(count);
+      const bar = document.createElement('div');
+      bar.className = 'topic-bar';
+      bar.style.height = `${Math.max(2, Math.round((count / max) * 40))}px`;
+      const label = document.createElement('span');
+      label.className = 'topic-bar-year';
+      label.textContent = String(year);
+      col.appendChild(num);
+      col.appendChild(bar);
+      col.appendChild(label);
+      bars.appendChild(col);
+    }
+    return bars;
+  }
+
+  async function renderTopics() {
+    app.innerHTML = '<div class="quiet">Loading topics...</div>';
+    const level = '';
+    const data = await fetchTopics(level);
+    app.innerHTML = '';
+
+    const h2 = document.createElement('h2');
+    h2.textContent = 'Topics';
+    app.appendChild(h2);
+
+    const intro = document.createElement('p');
+    intro.className = 'quiet';
+    intro.textContent = 'Active questions per subject, with per-year frequency.';
+    app.appendChild(intro);
+
+    const filter = document.createElement('div');
+    filter.className = 'topic-filter quiet';
+    filter.appendChild(document.createTextNode('Level '));
+    const select = document.createElement('select');
+    select.id = 'topics-level';
+    for (const value of ['', 'area', 'topic', 'subtopic']) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      opt.textContent = value || 'all';
+      if (value === level) opt.selected = true;
+      select.appendChild(opt);
+    }
+    select.addEventListener('change', async () => {
+      const next = await fetchTopics(select.value);
+      renderTopicRows(list, summary, next);
+    });
+    filter.appendChild(select);
+    app.appendChild(filter);
+
+    const list = document.createElement('div');
+    list.className = 'topic-list';
+    app.appendChild(list);
+    const summary = document.createElement('p');
+    summary.className = 'quiet';
+    app.appendChild(summary);
+
+    renderTopicRows(list, summary, data);
+  }
+
+  function renderTopicRows(list, summary, data) {
+    list.innerHTML = '';
+    const topics = data.topics || [];
+    if (!topics.length) {
+      const empty = document.createElement('div');
+      empty.className = 'quiet';
+      empty.textContent = 'No topics found.';
+      list.appendChild(empty);
+    }
+    for (const topic of topics) {
+      const row = document.createElement('div');
+      row.className = 'topic-row';
+
+      const info = document.createElement('div');
+      info.className = 'topic-info';
+      const name = document.createElement('div');
+      name.className = 'topic-name';
+      name.textContent = topic.name || prettifyTag(topic.slug);
+      const count = document.createElement('div');
+      count.className = 'quiet';
+      count.textContent = `${topic.active_questions} active`;
+      info.appendChild(name);
+      info.appendChild(count);
+
+      const link = document.createElement('a');
+      link.className = 'topic-practice';
+      link.textContent = 'practice →';
+      link.href = '#/practice';
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        startNewSession({tag: topic.slug, count: 10, only_unseen: true});
+      });
+
+      row.appendChild(info);
+      row.appendChild(renderTopicBars(topic.by_year));
+      row.appendChild(link);
+      list.appendChild(row);
+    }
+    const shown = topics.length;
+    const total = data.total || 0;
+    summary.textContent = total > shown
+      ? `Showing ${shown} of ${total} topics, sorted by frequency.`
+      : `${total} topics, sorted by frequency.`;
+  }
+
   // Router
   function updateNavActive(route) {
     document.querySelectorAll('.nav-links a').forEach(a => a.classList.remove('active'));
@@ -1130,6 +1256,9 @@
       if (el) el.classList.add('active');
     } else if (route === '/search') {
       const el = document.getElementById('nav-search');
+      if (el) el.classList.add('active');
+    } else if (route === '/topics') {
+      const el = document.getElementById('nav-topics');
       if (el) el.classList.add('active');
     } else if (route === '/stats') {
       const el = document.getElementById('nav-stats');
@@ -1150,6 +1279,8 @@
       renderPractice();
     } else if (path === '/search') {
       renderSearch();
+    } else if (path === '/topics') {
+      renderTopics();
     } else if (path === '/stats') {
       renderStats();
     } else {
