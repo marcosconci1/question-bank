@@ -4,7 +4,14 @@
   <img src="docs/banner.png" width="360" alt="question-bank">
 </p>
 
-> Store, validate, and search exam questions locally. Ingest from CSV files, exam-board PDFs, or any PDF with a text layer, with provenance on every question.
+<p align="center">
+  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License: MIT"/>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+"/>
+</p>
+
+<p align="center">
+  <b>Store, validate, and search exam questions locally.</b> Ingest from CSV files, exam-board PDFs, or any PDF with a text layer, with provenance on every question.
+</p>
 
 question-bank is a local-first engine for building a personal question bank from exam material. One command, `question-bank ingest`, turns declared sources into validated JSON records. Every record carries its source, page range, and extraction adapter, so you always know where a question came from and how it got there.
 
