@@ -14,6 +14,7 @@ from question_bank.validate import load_registered_tags, validate_question
 
 from .csv_adapter import CsvAdapter
 from .board_adapter import BoardPdfAdapter
+from .llm_adapter import PdfLlmAdapter
 from .manifest import Source, load_manifest
 
 
@@ -51,7 +52,12 @@ def run_ingest(
             raise ValueError(f"unknown source id: {source_id}")
         sources = selected
 
-    adapter_map = {"csv": CsvAdapter(), "pdf-board": BoardPdfAdapter(), **(adapters or {})}
+    adapter_map = {
+        "csv": CsvAdapter(),
+        "pdf-board": BoardPdfAdapter(),
+        "pdf-llm": PdfLlmAdapter(),
+        **(adapters or {}),
+    }
     ingested = skipped = quarantined = 0
     seen: set[str] = set()
     rejected: list[dict[str, Any]] = []

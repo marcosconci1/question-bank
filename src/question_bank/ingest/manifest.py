@@ -57,7 +57,7 @@ def load_manifest(path: Path) -> list[Source]:
         if source_id in seen:
             raise ValueError(f"duplicate source id: {source_id}")
         seen.add(source_id)
-        if kind not in {"csv", "pdf-board"}:
+        if kind not in {"csv", "pdf-board", "pdf-llm"}:
             raise ValueError(f"unknown source kind for {source_id}: {kind!r}")
         if not isinstance(source_path, str) or not source_path.strip():
             raise ValueError(f"source {source_id} requires a non-empty path")
