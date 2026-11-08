@@ -1,5 +1,9 @@
 # question-bank
 
+<p align="center">
+  <img src="docs/banner.png" width="360" alt="question-bank">
+</p>
+
 ## Overview
 
 `question-bank` is a self-contained POSCOMP and ENADE Computer Science
