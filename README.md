@@ -4,135 +4,77 @@
   <img src="docs/banner.png" width="360" alt="question-bank">
 </p>
 
-## Overview
+> Store, validate, and search exam questions locally. Ingest from CSV files, exam-board PDFs, or any PDF with a text layer, with provenance on every question.
 
-`question-bank` is a self-contained POSCOMP and ENADE Computer Science
-question-bank module. It stores one question per JSON file and provides
-validation, curation promotion, semantic retrieval, and a read-only MCP server.
-Semantic retrieval embeds question text through OpenRouter and stores vectors
-in this module's dedicated Qdrant instance.
+question-bank is a local-first engine for building a personal question bank from exam material. One command, `question-bank ingest`, turns declared sources into validated JSON records. Every record carries its source, page range, and extraction adapter, so you always know where a question came from and how it got there.
 
-The module owns its bank and retrieval state. It does not share a Qdrant
-container, collection, volume, or ledger with other modules.
+Ingestion is adapter-based. A generic CSV adapter maps any tabular source through a column-mapping manifest. A deterministic adapter handles the exam-board PDF formats already supported (FGV, IADES, Cesgranrio, FCPC). For any other PDF with a text layer, a language-model adapter extracts candidates one page batch at a time, validates them strictly, and quarantines anything it cannot trust. Scanned PDFs without a text layer are refused: there is no OCR and no guessing.
 
-## Layout (engine vs bank)
+Retrieval comes from a separate search layer: a local BM25 index that works with no API key, plus optional semantic search through your own embedding endpoint. An MCP server exposes the bank to coding agents, and a web UI browses it. Nothing leaves your machine except the page text you deliberately send to the extraction model and the query chunks you deliberately send to the embedding endpoint.
 
-This repo is the **engine**: code, tests, integrations, and profiles only.
-No question text, assets, or user data live here. The **bank** (questions,
-assets, corrections, answer logs, raw PDFs, reports) lives outside, resolved
-by `question_bank.paths.resolve_bank_root()`:
+## How ingestion works
 
-1. `QUESTION_BANK_ROOT` if set, else
-2. `$XDG_DATA_HOME/question-bank` (default `~/.local/share/question-bank`).
-
-The bank directory holds `questions/`, `assets/`, `corrections/log.jsonl`,
-`data/users/`, `reports/`, `docs/tags.md`, `data/raw/`, and owner-only
-extraction scripts. Never commit bank data into this repo; `.gitignore`
-guards the usual paths.
-
-## Status
-
-Implemented and migrated into `hermes-modules`. The bank contains 1,375
-POSCOMP questions and 176 ENADE Computer Science questions from the 2005,
-2008, 2011, 2014, 2017, and 2021 editions. The ENADE records comprise 160
-objective and 16 discursive questions; 167 are active and 9 are suspended
-after source review. One 2014 record retains a truncated stem, and eight 2017
-records retain OCR errors. Official voids are excluded (2005 Q70, 2011 Q13,
-and 2021 Q29/Q33). The report import is recorded in
-`reports/enade-cc-import.json`. The live Qdrant collection and indexing ledger
-contain all 1,551 bank records, with zero pending indexing. The PDF-driven
-adapter reproduces all 176 ENADE records directly from the pinned sources;
-per-year acceptance tests prohibit report replay and verify rejection
-inventories and deterministic crop hashes.
-
-## Data Contract
-
-- **Question bank:** `questions/*.json` is the versioned POSCOMP and ENADE
-  corpus. Each file is one question and is the source of truth for searchable
-  content, including official answer keys and discursive rubrics.
-- **Optional answer log:** `data/users/<user>/answers.jsonl` may contain local answer events
-  consumed by the MCP statistics tool. Set `QUESTION_BANK_USER` to select the user (default: `marcos`).
-  It is ignored by Git and is not required for retrieval.
-- **State:** the content-hash indexing ledger is stored at
-  `~/.local/share/question-bank/ledger.json` by default. Set
-  `QUESTION_BANK_STATE` to relocate its parent directory.
-- **Vector database:** the module's Docker Compose service exposes Qdrant only
-  on loopback: HTTP at `127.0.0.1:6343` and gRPC at `127.0.0.1:6344`. Its data
-  lives in the external Docker volume `question-bank-qdrant-data`.
-- **Search payloads:** Qdrant stores deterministic question point IDs plus
-  question metadata and flattened searchable text. Answer keys and rubrics are
-  excluded from embedded text.
-
-## Configuration
-
-Configuration is read only from environment variables; no `.env` file is read
-by the module. `OPENROUTER_API_KEY` is **optional**: without it, `query` uses
-keyword (BM25) search over the question files and `index` is a no-op. With a
-key and a running Qdrant, `query` ranks by meaning and falls back to keywords
-if either is down. `--mode semantic|lexical` forces one engine.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `OPENROUTER_API_KEY` | — | Optional. OpenRouter credential for semantic embeddings. |
-| `QDRANT_URL` | `http://127.0.0.1:6343` | Dedicated question-bank Qdrant HTTP endpoint. |
-| `QUESTION_BANK_ROOT` | module root | Root containing `questions/` and optional `contexts/`. |
-| `QUESTION_BANK_STATE` | `~/.local/share/question-bank` | Parent directory for `ledger.json`. |
-| `QUESTION_BANK_COLLECTION` | `questions` | Qdrant collection name. |
-| `EMBEDDING_BASE_URL` | OpenRouter API URL | Embeddings API base URL. |
-| `EMBEDDING_MODEL` | `openai/text-embedding-3-small` | Embedding model. |
-| `EMBEDDING_DIM` | `1536` | Embedding vector dimension. |
-| `EMBED_BATCH_SIZE` | `64` | Maximum texts submitted per embedding request. |
-
-`.env.example` is a non-secret reference file only. Export the required values
-through the environment used to run the command.
-
-## Usage
-
-```bash
-cd ~/question-bank
-uv sync --locked
-
-# Start the isolated vector database (create its external volume once if needed).
-docker volume create question-bank-qdrant-data
-docker compose -f docker/docker-compose.yml up -d
-
-export OPENROUTER_API_KEY="..."
-uv run question-search index
-uv run question-search query "distributed systems consistency" --top-k 10
-uv run question-search status
-
-# Re-audit and import the pinned ENADE report fixtures idempotently.
-uv run python scripts/import-enade-reports.py --dry-run
-uv run python scripts/import-enade-reports.py
-uv run python scripts/promote-curation.py --exam enade --update
-
-# Verify the PDF-driven ENADE adapter without writing bank content.
-uv run python scripts/adapters/enade-cc-pdf.py --dry-run --report /tmp/enade-cc-runtime.json
-
-# Run one edition's source-backed oracle (2005, 2008, 2011, 2014, 2017, or 2021).
-uv run python -m pytest 'tests/test-enade-adapter.py::test_generic_year_normalization_matches_all_audited_editions[2014]' -q
-
-# Run validation coverage and the complete automated suite.
-uv run python -m pytest tests/test-validate.py -q
-uv run --extra web pytest tests/ -q
-
-# Serve the read-only MCP interface over stdio.
-uv run question-bank-mcp
+```mermaid
+graph LR
+  M[sources.json manifest] --> K{kind}
+  K -->|csv| C[CSV adapter]
+  K -->|pdf-board| B[Board adapter]
+  K -->|pdf-llm| L[LLM adapter]
+  C --> V[Validation]
+  B --> V
+  L --> V
+  V -->|clean| Q[questions/ JSON records]
+  V -->|rejected| R[Quarantine JSONL with reason]
 ```
 
-## Hermes Study practice
+Each source is declared in a `sources.json` manifest with a `kind`, an `exam` slug, and a `year`. Exam names are free-form slugs: `poscomp`, `sat-math`, whatever you are studying. Exam-specific rules apply only to the exams that have them, and every other exam passes the same structural checks. The pipeline writes a candidate only when validation passes; failures land in `reports/ingest-quarantine.jsonl` with the reason. The PDF adapters account for every page: extracted, empty, or explicitly quarantined. Nothing is dropped silently.
 
-`integrations/hermes/question-bank/` is the Study-profile native plugin. It
-registers the read-only `search-questions`, `get-question`, and `get-stats`
-tools plus the `question-practice` skill. Practice retrieval omits answer keys
-and rubrics until the learner attempts the question; solution retrieval keeps
-them. Image blocks receive absolute local paths for Hermes vision.
+Every question also carries concept tags. The tags live in a local registry, `docs/tags.md`: one concept per line with a slug, a display name, and a level (area, topic, or subtopic). Validation checks question tags against that registry, so the bank stays curatable across sources.
 
-The agent-side recorder at
-`integrations/hermes/question-bank/skills/question-practice/scripts/record-answer.py`
-appends graded attempts to `data/users/<user>/answers.jsonl` (default user `marcos`). It never modifies question
-content and rejects duplicate `(question_id, session_id)` attempts. See
-`integrations/hermes/README.md` for activation and the compatibility contract.
+## Quick start
 
-The validator and promotion workflow are provided by `question_bank.validate`
-and `scripts/promote-curation.py`; see `docs/` for schema and curation details.
+```bash
+# Declare a source: reports/sources.json next to your bank
+cat > reports/sources.json <<'EOF'
+[
+  {
+    "id": "my-exam-2025",
+    "kind": "csv",
+    "path": "my-exam.csv",
+    "exam": "my-exam",
+    "year": 2025,
+    "options": {"answer_column": "key", "id_prefix": "my-exam-"}
+  }
+]
+EOF
+
+uv run question-bank ingest          # run the pipeline
+uv run question-bank doctor          # check configuration and storage
+uv run question-search index         # build the local index
+uv run question-search query "hash tables"
+```
+
+CSV ingestion works offline. PDF ingestion through the LLM adapter needs an OpenRouter key and uses the model in `QUESTION_EXTRACT_MODEL` (default `openai/gpt-4o-mini`) at temperature 0, with one bounded repair call per batch.
+
+## What is inside
+
+| Piece | What it does |
+| --- | --- |
+| `question-bank` CLI | `ingest`, `doctor`, `diagnose`: run the pipeline, check health, write a redacted diagnostic bundle |
+| `src/question_bank/` | Adapters, validation, provenance, quarantine, event journal |
+| `question-search` CLI | Local BM25 search, optional semantic search, index status |
+| MCP server | Exposes bank queries to coding agents over stdio |
+| `web/` | Local web UI for browsing the bank |
+| Tags registry | `docs/tags.md`: concept slugs with names and levels, checked at validation |
+| `docs/` | `ingestion.md` and more: manifest format, adapters, env vars |
+
+Diagnostics are local by design: `doctor` reports per-check OK/WARN/FAIL and exits nonzero on failure; the JSONL journal keeps 30 days (1 MB) of ingestion and doctor events with secrets scrubbed on write; `diagnose` prints a redacted bundle with no home paths, no file contents, and no key values. There is no telemetry.
+
+## Requirements
+
+- Python 3.12 or newer and [uv](https://docs.astral.sh/uv/)
+- Optional: `OPENROUTER_API_KEY` for LLM PDF ingestion and semantic search; `QUESTION_BANK_ROOT` to relocate the bank; `QUESTION_EXTRACT_MODEL` to choose the extraction model
+
+## License
+
+MIT
