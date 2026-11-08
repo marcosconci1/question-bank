@@ -1,0 +1,21 @@
+{
+  "id": "poscomp-q2",
+  "exam": "poscomp",
+  "year": 2020,
+  "number": 2,
+  "stem": "Consider a sorting algorithm whose behavior is described in this complete example.",
+  "options": [
+    "Alpha choice",
+    "Beta choice",
+    "Gamma choice",
+    "Delta choice",
+    "Epsilon choice"
+  ],
+  "answer": "B",
+  "source": "POSCOMP 2020, question 2",
+  "tags": [
+    "fundamentos-da-computacao",
+    "algoritmos-e-estrutura-de-dados",
+    "arvore-avl"
+  ]
+}

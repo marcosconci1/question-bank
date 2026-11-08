@@ -24,6 +24,7 @@ web = [
 [project.scripts]
 question-search = "question_search.cli:main"
 question-bank-mcp = "question_bank.mcp_server:main"
+question-bank = "question_bank.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

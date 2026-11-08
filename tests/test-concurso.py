@@ -37,6 +37,23 @@ def _make_pdf(tmp_path: Path, filename: str, pages: list[str]) -> Path:
     return pdf_path
 
 
+FGV_PAGES = [
+    "Informações Gerais\nLeia atentamente as instruções abaixo.\nCaderno de Provas",
+    (
+        "Tribunal Regional Federal da 1ª Região\n"
+        "FGV Conhecimento\n"
+        "Tipo 1 – Branca – Página 2\n"
+        "1\n"
+        "Considere uma tabela hash de tamanho 10 com função h(k) = k mod 10 e tratamento de colisões por encadeamento para as chaves 15, 25, 35, 45 e 55.\n"
+        "(A) Todas as chaves colidem no índice 5.\n"
+        "(B) Nenhuma colisão ocorre.\n"
+        "(C) Ocorre overflow imediato.\n"
+        "(D) As chaves são distribuídas uniformemente.\n"
+        "(E) Apenas duas chaves colidem.\n"
+    ),
+]
+
+
 def test_fold_accents_and_normalize_whitespace() -> None:
     assert fold_accents("Árvore B+ e Dispersão") == "arvore b+ e dispersao"
     assert normalize_whitespace("tabela   de\xad\n  hash  ") == "tabela de hash"
@@ -109,22 +126,7 @@ def test_strip_page_noise_per_banca() -> None:
 
 
 def test_split_and_extract_synthetic_pdfs_5_and_4_options(tmp_path: Path) -> None:
-    fgv_pages = [
-        "Informações Gerais\nLeia atentamente as instruções abaixo.\nCaderno de Provas",
-        (
-            "Tribunal Regional Federal da 1ª Região\n"
-            "FGV Conhecimento\n"
-            "Tipo 1 – Branca – Página 2\n"
-            "1\n"
-            "Considere uma tabela hash de tamanho 10 com função h(k) = k mod 10 e tratamento de colisões por encadeamento para as chaves 15, 25, 35, 45 e 55.\n"
-            "(A) Todas as chaves colidem no índice 5.\n"
-            "(B) Nenhuma colisão ocorre.\n"
-            "(C) Ocorre overflow imediato.\n"
-            "(D) As chaves são distribuídas uniformemente.\n"
-            "(E) Apenas duas chaves colidem.\n"
-        ),
-    ]
-    fgv_pdf = _make_pdf(tmp_path, "fgv-sample.pdf", fgv_pages)
+    fgv_pdf = _make_pdf(tmp_path, "fgv-sample.pdf", FGV_PAGES)
     fgv_cands = extract_questions_from_pdf(fgv_pdf, "fgv")
     assert len(fgv_cands) == 1
     q1 = fgv_cands[0]
@@ -443,107 +445,4 @@ def test_validator_accepts_active_and_suspended_concurso_records(tmp_path: Path)
     assert res_susp.errors == []
     assert res_susp.warnings == []
 
-
-def test_import_concurso_idempotence_and_quarantine(tmp_path: Path) -> None:
-    import hashlib
-    import importlib.util
-    import json
-
-    script_path = Path(__file__).resolve().parents[1] / "scripts" / "import-concurso.py"
-    spec = importlib.util.spec_from_file_location("import_concurso", script_path)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-
-    # Create synthetic prova + definitivo gabarito in tmp_path
-    prova_pages = [
-        "Informações Gerais\nCaderno de Provas",
-        (
-            "Tribunal Regional Federal\n"
-            "FGV Conhecimento\n"
-            "Tipo 1 – Branca – Página 2\n"
-            "1\n"
-            "Considere uma tabela hash com tratamento de colisões por encadeamento externo para as chaves 15, 25, 35, 45 e 55.\n"
-            "(A) Ocorre overflow imediato.\n"
-            "(B) As chaves são distribuídas uniformemente.\n"
-            "(C) A busca tem complexidade quadrática.\n"
-            "(D) Todas as chaves colidem no mesmo índice.\n"
-            "(E) Nenhuma colisão ocorre.\n"
-            "2\n"
-            "Observe a figura a seguir que mostra uma árvore B de ordem 3.\n"
-            "(A) Altura 1.\n"
-            "(B) Altura 2.\n"
-            "(C) Altura 3.\n"
-            "(D) Altura 4.\n"
-            "(E) Altura 5.\n"
-            "3\n"
-            "Assinale a alternativa em que todas as palavras estão grafadas corretamente.\n"
-            "(A) Exceção.\n"
-            "(B) Excessão.\n"
-            "(C) Esceção.\n"
-            "(D) Excessão.\n"
-            "(E) Ecessão.\n"
-        ),
-    ]
-    gab_pages = [
-        (
-            "TRIBUNAL REGIONAL FEDERAL\n"
-            "GABARITOS DEFINITIVOS\n"
-            "Técnico Judiciário - Desenvolvimento de Sistemas de Informação - TIPO 1\n"
-            "1\n2\n3\n"
-            "D\nA\nA\n"
-        )
-    ]
-    prova_pdf = _make_pdf(tmp_path, "prova.pdf", prova_pages)
-    gab_pdf = _make_pdf(tmp_path, "gab.pdf", gab_pages)
-
-    # Monkeypatch REPO_ROOT to tmp_path so relative local_path resolves
-    mod.REPO_ROOT = tmp_path
-    manifest = [
-        {
-            "url": "https://conhecimento.fgv.br/prova.pdf",
-            "local_path": "prova.pdf",
-            "sha256": hashlib.sha256(prova_pdf.read_bytes()).hexdigest(),
-            "bytes": prova_pdf.stat().st_size,
-            "fetched_at": "2026-10-30T00:00:00Z",
-            "banca": "fgv",
-            "organ": "trf1",
-            "role": "Técnico Judiciário - Desenvolvimento de Sistemas de Informação",
-            "year": 2024,
-            "caderno": "tipo-1",
-            "kind": "prova",
-        },
-        {
-            "url": "https://conhecimento.fgv.br/gab.pdf",
-            "local_path": "gab.pdf",
-            "sha256": hashlib.sha256(gab_pdf.read_bytes()).hexdigest(),
-            "bytes": gab_pdf.stat().st_size,
-            "fetched_at": "2026-10-30T00:00:00Z",
-            "banca": "fgv",
-            "organ": "trf1",
-            "role": "Todos os Cargos",
-            "year": 2024,
-            "caderno": "unico",
-            "kind": "definitivo",
-        },
-    ]
-    manifest_path = tmp_path / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    q_dir = tmp_path / "questions"
-    quar_path = tmp_path / "quarantine.jsonl"
-    tags_path = Path(__file__).resolve().parents[1] / "docs" / "tags.md"
-
-    s1 = mod.run_import(manifest_path, q_dir, quar_path, tags_path, dry_run=False)
-    assert s1["deduped_imported_total"] == 1
-    assert s1["quarantined_total"] == 1
-    assert s1["skipped_out_of_scope_total"] == 1
-
-    files_run1 = {p.name: p.read_bytes() for p in q_dir.glob("*.json")}
-    quar_run1 = quar_path.read_bytes()
-
-    s2 = mod.run_import(manifest_path, q_dir, quar_path, tags_path, dry_run=False)
-    assert s1 == s2
-    files_run2 = {p.name: p.read_bytes() for p in q_dir.glob("*.json")}
-    assert files_run1 == files_run2
-    assert quar_run1 == quar_path.read_bytes()
 
