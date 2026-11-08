@@ -57,7 +57,7 @@ def load_manifest(path: Path) -> list[Source]:
         if source_id in seen:
             raise ValueError(f"duplicate source id: {source_id}")
         seen.add(source_id)
-        if kind != "csv":
+        if kind not in {"csv", "pdf-board"}:
             raise ValueError(f"unknown source kind for {source_id}: {kind!r}")
         if not isinstance(source_path, str) or not source_path.strip():
             raise ValueError(f"source {source_id} requires a non-empty path")
@@ -68,6 +68,18 @@ def load_manifest(path: Path) -> list[Source]:
         options = entry.get("options", {})
         if not isinstance(options, dict):
             raise ValueError(f"source {source_id} options must be an object")
+        if kind == "pdf-board":
+            missing = [
+                field
+                for field in ("banca", "organ", "role", "caderno")
+                if not isinstance(options.get(field), str) or not options[field].strip()
+            ]
+            if missing:
+                raise ValueError(
+                    f"source {source_id} requires board metadata: {', '.join(missing)}"
+                )
+            if options["banca"].strip().lower() not in {"fgv", "iades", "cesgranrio", "fcpc"}:
+                raise ValueError(f"source {source_id} has unsupported banca: {options['banca']!r}")
         resolved_path = (manifest_path.parent / source_path).resolve()
         sources.append(Source(source_id, kind, resolved_path, exam.strip().lower(), year, options))
     return sources

@@ -37,6 +37,23 @@ def _make_pdf(tmp_path: Path, filename: str, pages: list[str]) -> Path:
     return pdf_path
 
 
+FGV_PAGES = [
+    "Informações Gerais\nLeia atentamente as instruções abaixo.\nCaderno de Provas",
+    (
+        "Tribunal Regional Federal da 1ª Região\n"
+        "FGV Conhecimento\n"
+        "Tipo 1 – Branca – Página 2\n"
+        "1\n"
+        "Considere uma tabela hash de tamanho 10 com função h(k) = k mod 10 e tratamento de colisões por encadeamento para as chaves 15, 25, 35, 45 e 55.\n"
+        "(A) Todas as chaves colidem no índice 5.\n"
+        "(B) Nenhuma colisão ocorre.\n"
+        "(C) Ocorre overflow imediato.\n"
+        "(D) As chaves são distribuídas uniformemente.\n"
+        "(E) Apenas duas chaves colidem.\n"
+    ),
+]
+
+
 def test_fold_accents_and_normalize_whitespace() -> None:
     assert fold_accents("Árvore B+ e Dispersão") == "arvore b+ e dispersao"
     assert normalize_whitespace("tabela   de\xad\n  hash  ") == "tabela de hash"
@@ -109,22 +126,7 @@ def test_strip_page_noise_per_banca() -> None:
 
 
 def test_split_and_extract_synthetic_pdfs_5_and_4_options(tmp_path: Path) -> None:
-    fgv_pages = [
-        "Informações Gerais\nLeia atentamente as instruções abaixo.\nCaderno de Provas",
-        (
-            "Tribunal Regional Federal da 1ª Região\n"
-            "FGV Conhecimento\n"
-            "Tipo 1 – Branca – Página 2\n"
-            "1\n"
-            "Considere uma tabela hash de tamanho 10 com função h(k) = k mod 10 e tratamento de colisões por encadeamento para as chaves 15, 25, 35, 45 e 55.\n"
-            "(A) Todas as chaves colidem no índice 5.\n"
-            "(B) Nenhuma colisão ocorre.\n"
-            "(C) Ocorre overflow imediato.\n"
-            "(D) As chaves são distribuídas uniformemente.\n"
-            "(E) Apenas duas chaves colidem.\n"
-        ),
-    ]
-    fgv_pdf = _make_pdf(tmp_path, "fgv-sample.pdf", fgv_pages)
+    fgv_pdf = _make_pdf(tmp_path, "fgv-sample.pdf", FGV_PAGES)
     fgv_cands = extract_questions_from_pdf(fgv_pdf, "fgv")
     assert len(fgv_cands) == 1
     q1 = fgv_cands[0]
