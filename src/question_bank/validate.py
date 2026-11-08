@@ -19,7 +19,7 @@ REQUIRED_FIELDS = ("id", "type", "exam", "year", "number", "stem", "source", "ta
 POSCOMP_YEAR_RANGE = range(2002, 2026)
 ENADE_YEARS = frozenset({2005, 2008, 2011, 2014, 2017, 2021})
 CONCURSO_EXAMS = frozenset({"fgv", "iades", "cesgranrio", "fcpc"})
-VALID_EXAMS = frozenset({"poscomp", "enade"}) | CONCURSO_EXAMS
+EXAM_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 CONCURSO_YEAR_RANGE = range(1990, 2031)
 SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
 URL_RE = re.compile(r"^https?://[^\s/$.?#].[^\s]*$", re.IGNORECASE)
@@ -184,28 +184,33 @@ def validate_question(
         _add(result, "id_filename_mismatch", "id does not match filename")
 
     exam = question.get("exam")
-    if exam not in VALID_EXAMS:
+    valid_exam_slug = isinstance(exam, str) and EXAM_SLUG_RE.fullmatch(exam) is not None
+    if not valid_exam_slug:
         _add(
             result,
             "invalid_exam",
-            "exam must be one of 'poscomp', 'enade', 'fgv', 'iades', 'cesgranrio', or 'fcpc'",
+            "exam must be a non-empty slug of lowercase letters, digits, and dashes",
         )
 
     year = question.get("year")
     if exam == "enade":
         valid_year = isinstance(year, int) and not isinstance(year, bool) and year in ENADE_YEARS
-        allowed = "the supported ENADE editions"
-    elif exam in CONCURSO_EXAMS:
+        year_error = "year must be an integer in the supported ENADE editions"
+    elif valid_exam_slug and exam in CONCURSO_EXAMS:
         valid_year = isinstance(year, int) and not isinstance(year, bool) and year in CONCURSO_YEAR_RANGE
-        allowed = "the concurso 1990-2030 range"
-    else:
+        year_error = "year must be an integer in the concurso 1990-2030 range"
+    elif exam == "poscomp":
         valid_year = isinstance(year, int) and not isinstance(year, bool) and year in POSCOMP_YEAR_RANGE
-        allowed = "the POSCOMP 2002-2025 range"
+        year_error = "year must be an integer in the POSCOMP 2002-2025 range"
+    else:
+        valid_year = isinstance(year, int) and not isinstance(year, bool)
+        year_error = "year must be an integer"
     if not valid_year:
-        _add(result, "invalid_year", f"year must be an integer in {allowed}")
+        _add(result, "invalid_year", year_error)
 
     number = question.get("number")
-    max_number = 150 if exam in CONCURSO_EXAMS else 100
+    is_concurso = valid_exam_slug and exam in CONCURSO_EXAMS
+    max_number = 150 if is_concurso else 100
     if not isinstance(number, int) or isinstance(number, bool) or not 1 <= number <= max_number:
         _add(result, "invalid_number", f"number must be an integer from 1 through {max_number}")
 
@@ -219,12 +224,12 @@ def validate_question(
 
     options = question.get("options")
     option_texts: list[str] = []
-    allowed_option_counts = {4, 5} if exam in CONCURSO_EXAMS else {5}
+    allowed_option_counts = {4, 5} if is_concurso else {5}
     if question_type == "mc":
         if "answer" not in question:
             _add(result, "missing_required_field", "missing required field: answer")
         if not isinstance(options, list) or len(options) not in allowed_option_counts:
-            expected_desc = "4 or 5 options" if exam in CONCURSO_EXAMS else "exactly 5 options"
+            expected_desc = "4 or 5 options" if is_concurso else "exactly 5 options"
             _add(result, "invalid_option_count", f"mc questions must have {expected_desc}")
         else:
             for index, option in enumerate(options):
@@ -258,7 +263,7 @@ def validate_question(
             _add(result, "invalid_component", "ENADE component must be 'general-education' or 'specific'")
         if question.get("course") != "computer-science":
             _add(result, "invalid_course", "ENADE course must be 'computer-science'")
-    elif exam in CONCURSO_EXAMS:
+    elif is_concurso:
         _validate_concurso_provenance(question, result)
 
     if "context" in question and question["context"] is not None:
@@ -275,15 +280,15 @@ def validate_question(
         _add(result, "invalid_tags", "tags must be a non-empty list")
     else:
         for tag in tags:
-            if not isinstance(tag, str) or not tag.strip() or tag not in registered_tags:
+            if not isinstance(tag, str) or not tag.strip() or (exam == "poscomp" and tag not in registered_tags):
                 _add(result, "unregistered_tag", f"tag is not registered: {tag!r}")
 
     if stem:
         if len(stem) < 40:
             _add(result, "short_stem", "stem has fewer than 40 characters", "warning")
-        reviewed_complete = is_source_reviewed_complete_enade(question, path) or is_verified_concurso_record(
-            question, path
-        )
+        reviewed_complete = (
+            exam == "enade" and is_source_reviewed_complete_enade(question, path)
+        ) or (is_concurso and is_verified_concurso_record(question, path))
         if _ends_mid_sentence(stem) and not reviewed_complete:
             _add(result, "stem_ends_mid_sentence", "stem appears to end mid-sentence", "warning")
 

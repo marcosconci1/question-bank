@@ -151,7 +151,7 @@ def test_unreviewed_enade_stem_still_gets_mid_sentence_warning(tmp_path):
 @pytest.mark.parametrize(
     ("field", "value", "expected"),
     [
-        ("exam", "unknown", "invalid_exam"),
+        ("exam", "Not Valid!", "invalid_exam"),
         ("year", 2019, "invalid_year"),
         ("component", "general", "invalid_component"),
         ("course", "information-systems", "invalid_course"),
