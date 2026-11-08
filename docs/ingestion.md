@@ -1,93 +1,100 @@
-# Ingestion Plan (v2 — modular, reuse-first)
+# Generic question ingestion
 
-DESIGN PHASE DRAFT — rewritten after sign-off feedback (2026-09-23):
-ingestion must be modularized and must NOT reinvent wheels. Existing
-datasets and parsers already exist for nearly every source; our code is
-glue, not parsing engines.
+The `question-bank ingest` command loads configured sources for any exam slug. A source declares its exam, year, input file, adapter kind, and adapter options in a JSON manifest named `sources.json`. The default manifest is `reports/sources.json` under the bank root. Paths in the manifest are resolved relative to the manifest file.
 
-## Pipeline architecture (four decoupled layers)
+## Command
 
-    SOURCE FETCHER -> PARSER (borrowed) -> NORMALIZER (ours) -> VALIDATOR
+```bash
+uv run question-bank ingest
+uv run question-bank ingest --manifest /path/to/sources.json
+uv run question-bank ingest --source sat-math-2025
+uv run question-bank ingest --dry-run
+uv run question-bank ingest --json
+```
 
-Each layer is pluggable and independently replaceable. A new source = a
-new fetcher + adapter pair; the parser is picked off the shelf.
+The command accepts these options:
 
-1. **Source fetchers** — download/cache raw sources (dataset CSVs, PDFs).
-   Dumb and idempotent: fetch, cache under `data/raw/<source>/`, report
-   what changed. One small script per source family.
-2. **Parsers (borrowed)** — turn raw sources into structured intermediates
-   (JSON with question text, options, key, images). NEVER written by us
-   where a dataset or parser exists. Only parsed output reaches our code.
-3. **Normalizers (the only code we own)** — map each source's intermediate
-   onto the bank schema (`docs/schema.md`). One adapter module per source
-   (`scripts/adapters/<source>.py`), sharing a common interface.
-4. **Validator** — one shared gate before a question enters the bank
-   (schema conformance, answer-in-range, tag registry check). Same rules
-   for every source; this is where quirks die, not in adapters.
+| Option | Purpose |
+| --- | --- |
+| `--manifest PATH` | Use a specific `sources.json` file. By default, use `reports/sources.json` under the bank root. |
+| `--source ID` | Process only the source with this manifest `id`. |
+| `--dry-run` | Validate candidates and report counts without writing questions or quarantine records. |
+| `--json` | Print the ingestion summary as JSON. |
 
-The bank never sees a source quirk: by the time a question file is
-written, it is source-agnostic. Adapter contracts are the only
-source-specific code in the repo.
+The summary reports ingested, skipped, and quarantined question counts. Existing question IDs and duplicate IDs in a run are skipped.
 
-## Sources (v2 status)
+## Manifest
 
-| # | Source | What we reuse | We write | Status |
-|---|--------|---------------|----------|--------|
-| 1 | POSCOMP (POSCOMP-RAG dataset, Zenodo/HF) | peer-reviewed CSV, 1,340 rows | normalizer only | done (PoC) |
-| 2 | ENADE CC (Mendeley dataset w9hdbnrk85) | all six editions, pinned PDFs, keys, rubrics, and report-only fixtures | fetcher + PDF adapter + report importer | done: 176 records imported with 167 active and 9 suspended; PDF-driven adapter verified for every edition; Qdrant and the indexing ledger are synchronized at 1,551 records |
+The manifest is a JSON array. Each entry has these required fields:
 
-Source review retains one truncated 2014 stem and OCR errors in eight 2017
-stems. Live semantic queries return ENADE records alongside POSCOMP records.
-| 3 | ENADE other tech courses | same dataset family / INEP PDFs | fetcher + normalizer | later |
-| 4 | PDF-only gaps | INEP PDFs via existing engines (see below) | config, not code | later |
-| 5 | POSCOMP pre-2016 / image questions | awesome-poscomp PDFs + MinerU/Docling | config, not code | later, only if the bank feels incomplete |
+| Field | Description |
+| --- | --- |
+| `id` | Unique identifier for this source entry. |
+| `kind` | Adapter kind: `csv`, `pdf-board`, or `pdf-llm`. |
+| `path` | Path to the source file, relative to the manifest. |
+| `exam` | Exam slug. It is normalized to lowercase and is not restricted to a list of known exams. |
+| `year` | Integer exam year. |
+| `options` | Optional object containing adapter-specific configuration. |
 
-### Key reuse decisions (researched 2026-09-23, kill-first)
+`csv` reads structured question records from a CSV file. By default, it reads `id`, `stem`, `number`, `options`, and `answer` columns, and derives tags from `knowledge_area`, `area`, and `subarea`. Set `options_columns` to name separate option columns, or set `options_column` for a column containing a Python or JSON list of strings. Column names, ID prefix, source text template, type, status, and tag columns can be configured in `options`.
 
-- **The v1 plan for source 2 was hand-written PDF parsing. That is dead.**
-  A Mendeley dataset (w9hdbnrk85) already collects every ENADE Computer
-  Science edition (2005-2021) with full exam PDFs. We fetch a dataset
-  instead of parsing INEP PDFs from scratch. PDF parsing becomes the
-  fallback, not the plan.
-- **When PDFs must be parsed**, use an existing engine: MinerU (best
-  published accuracy on exam papers in OmniDocBench; AGPL - fine for a
-  private bank) or Docling (MIT, typed document objects). Both handle
-  layout, tables, formulas, and image extraction. We write zero
-  OCR/layout code.
-- **Precedent for the INEP PDF family**: caue-paiva/ENEM_PDF_PARSER
-  already parses INEM (same INEP exam + gabarito layout family) into
-  JSON including images, with the answer key joined. If a dataset route
-  fails for a specific edition, adapting that parser is the fallback -
-  borrowed code, not ours.
-- **Licensing check done**: POSCOMP-RAG (CC BY), Mendeley (CC BY 4.0),
-  Docling (MIT), MinerU (AGPL-3.0). All usable; the bank is private.
+`pdf-board` parses exam booklets and answer keys using the existing board parser. Its `options` must include `banca`, `organ`, `role`, and `caderno`. This adapter currently supports the `fgv`, `iades`, `cesgranrio`, and `fcpc` board formats. An answer key can be supplied with `gabarito_path` or `answer_key_path`; related settings include `gabarito_kind`, `prova_url`, `prova_sha256`, `gabarito_url`, and `gabarito_sha256`.
 
-## Adapter contract (the modularity guarantee)
+`pdf-llm` extracts multiple-choice questions from PDFs that contain a text layer. Its optional `batch_pages` setting controls the number of pages sent in each extraction request and defaults to 4. Other options, such as `tags`, can be supplied in the same object.
 
-Every normalizer module implements the same interface and nothing else:
+Example manifest:
 
-    normalize(source_record) -> NormalizedQuestion | Rejection
+```json
+[
+  {
+    "id": "sat-math-2025",
+    "kind": "csv",
+    "path": "sat-math-2025.csv",
+    "exam": "sat-math",
+    "year": 2025,
+    "options": {
+      "id_column": "question_id",
+      "stem_column": "question",
+      "options_columns": ["A", "B", "C", "D"],
+      "answer_column": "correct_answer",
+      "number_column": "number",
+      "tags_columns": ["topic"]
+    }
+  },
+  {
+    "id": "fgv-sample-booklet-2025",
+    "kind": "pdf-board",
+    "path": "fgv-sample-booklet.pdf",
+    "exam": "fgv",
+    "year": 2025,
+    "options": {
+      "banca": "fgv",
+      "organ": "sample-organization",
+      "role": "analyst",
+      "caderno": "type-1",
+      "gabarito_path": "fgv-sample-answer-key.pdf",
+      "gabarito_kind": "definitivo"
+    }
+  }
+]
+```
 
-- `NormalizedQuestion` matches `docs/schema.md` exactly, including the
-  `status: candidate` default from data-model.md (everything enters as
-  candidate).
-- `Rejection` carries a machine-readable reason (`voided`, `parse-error`,
-  `duplicate`, `missing-answer-key`) and lands in the run report, never
-  in the bank.
-- Adapters are pure: no filesystem writes, no network. Fetchers fetch,
-  adapters map, the writer writes. Each layer is testable in isolation.
-- Context blocks (ENADE case texts) are emitted by adapters as separate
-  `contexts/*.json` records with stable ids; the schema just references
-  them.
+## Pipeline and provenance
 
-## Cross-source rules (unchanged from v1)
+An adapter reads a configured source and yields candidate records. The shared pipeline then validates each candidate against the question structure and registered tags. Valid candidates are written as question JSON files under `questions/`. Invalid candidates are quarantined in `reports/ingest-quarantine.jsonl` with a reason. Candidates rejected by an adapter are also quarantined with their adapter-provided reason. Dry runs perform validation without writing either destination.
 
-- Ids namespaced by exam (`poscomp-...`, `enade-...`) - collisions
-  impossible by construction.
-- Tag collisions merge in `docs/tags.md` via aliases, never by editing
-  question files.
-- Importers are rerunnable/idempotent; manual fixes go through the
-  `corrections/` overlay (data-model.md), applied post-import.
-- Every import produces a machine-readable run report: counts in, counts
-  out, rejection taxonomy (report the reject taxonomy, not just
-  pass/fail).
+Every written question includes a `provenance` object. CSV provenance records the source ID, source filename, and CSV row. PDF LLM provenance records the source ID, adapter, extraction model, and page range. The board adapter records source and answer-key metadata, including available URLs and checksums.
+
+## PDF LLM behavior
+
+The PDF LLM adapter groups pages according to `options.batch_pages`, which defaults to 4. Each batch is sent with temperature 0 and must return strict JSON matching the extraction schema. If the response is invalid, the adapter makes one repair attempt for that batch. A batch that remains invalid is quarantined as a unit with its page range and failure reason; other batches continue independently.
+
+The adapter keeps page accounting for each processed page, with outcomes such as yielded candidate, empty, or quarantined. A PDF must provide selectable text for extraction. Scanned pages without a text layer yield no question candidates; OCR is not performed. Use a text-layer PDF for this adapter.
+
+## Environment variables
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `QUESTION_BANK_ROOT` | Overrides the bank directory used to find the default manifest and write question and report files. | `$XDG_DATA_HOME/question-bank`, or `~/.local/share/question-bank` when `XDG_DATA_HOME` is unset. |
+| `QUESTION_EXTRACT_MODEL` | Model name used by the PDF LLM adapter. | `openai/gpt-4o-mini` |
+| `OPENROUTER_API_KEY` | API credential required for live PDF LLM requests. | No default; required when using the live API. |

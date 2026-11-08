@@ -1,0 +1,21 @@
+{
+  "id": "poscomp-q1",
+  "exam": "poscomp",
+  "year": 2020,
+  "number": 1,
+  "stem": "Consider a graph algorithm whose behavior is described in this complete example.",
+  "options": [
+    "Alpha choice",
+    "Beta choice",
+    "Gamma choice",
+    "Delta choice",
+    "Epsilon choice"
+  ],
+  "answer": "A",
+  "source": "POSCOMP 2020, question 1",
+  "tags": [
+    "fundamentos-da-computacao",
+    "algoritmos-e-estrutura-de-dados",
+    "arvore-avl"
+  ]
+}
