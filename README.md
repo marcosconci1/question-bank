@@ -7,6 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/License-MIT-blue" alt="License: MIT"/>
   <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" alt="Python 3.12+"/>
+  <img src="https://img.shields.io/github/actions/workflow/status/marcosconci1/question-bank/tests.yml?label=Tests" alt="Tests workflow status"/>
 </p>
 
 <p align="center">
