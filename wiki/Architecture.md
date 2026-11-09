@@ -82,8 +82,8 @@ booklet should cost one batch, not the whole ingest run. Each rejection
 lands in the quarantine journal with source, candidate, and reason
 attached.
 
-**Every page is accounted for.** The PDF adapters track each page as
-extracted, empty, or quarantined, and stamp each candidate with the
+**Every page is accounted for.** The LLM adapter tracks each page as
+extracted, empty, or quarantined, and stamps each candidate with the
 page range it came from, the adapter name, and the model used. The why:
 provenance is what makes a bank auditable, and page accounting makes
 silent drops impossible by construction.

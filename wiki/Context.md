@@ -29,8 +29,8 @@ with a text layer goes through a language-model adapter that extracts
 under a strict schema and gets one bounded repair attempt before a
 batch is quarantined. Every candidate passes the same structural
 validation before it lands in the bank, and every record carries its
-source, page range, and adapter. Failure is explicit: quarantined
-batches are journaled with reasons, and every page is accounted for.
+source, location, and adapter. Failure is explicit: quarantined
+batches are journaled with reasons, and the LLM adapter accounts for every page it reads.
 
 ## What this system refuses to do
 

@@ -50,7 +50,11 @@ first ingest.
   key.
 - Optional: `QDRANT_URL`, `EMBEDDING_BASE_URL`, `EMBEDDING_MODEL`, and
   `EMBEDDING_DIM` to enable semantic search; `QUESTION_EXTRACT_MODEL`
-  to choose the extraction model (default `openai/gpt-4o-mini`).
+  to choose the extraction model (default `openai/gpt-4o-mini`). The
+  remaining search settings are `QUESTION_BANK_STATE` (where the index
+  ledger lives), `QUESTION_BANK_COLLECTION` (Qdrant collection name),
+  and `EMBED_BATCH_SIZE` (texts per embedding request); see
+  `.env.example` for all of them with defaults.
 
 Environment variables live in a `.env` file you create yourself; the
 engine never writes one for you and never ships one.

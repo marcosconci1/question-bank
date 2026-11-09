@@ -13,7 +13,7 @@
   <b>Store, validate, and search exam questions locally.</b> Ingest from CSV files, exam-board PDFs, or any PDF with a text layer, with provenance on every question.
 </p>
 
-question-bank is a local-first engine for building a personal question bank from exam material. One command, `question-bank ingest`, turns declared sources into validated JSON records. Every record carries its source, page range, and extraction adapter, so you always know where a question came from and how it got there.
+question-bank is a local-first engine for building a personal question bank from exam material. One command, `question-bank ingest`, turns declared sources into validated JSON records. Every record carries its source, its extraction adapter, and its location: page range for PDFs, row number for CSV.
 
 Ingestion is adapter-based. A generic CSV adapter maps any tabular source through a column-mapping manifest. A deterministic adapter handles the exam-board PDF formats already supported (FGV, IADES, Cesgranrio, FCPC). For any other PDF with a text layer, a language-model adapter extracts candidates one page batch at a time, validates them strictly, and quarantines anything it cannot trust. Scanned PDFs without a text layer are refused: there is no OCR and no guessing.
 
@@ -34,7 +34,7 @@ graph LR
   V -->|rejected| R[Quarantine JSONL with reason]
 ```
 
-Each source is declared in a `sources.json` manifest with a `kind`, an `exam` slug, and a `year`. Exam names are free-form slugs: `poscomp`, `sat-math`, whatever you are studying. Exam-specific rules apply only to the exams that have them, and every other exam passes the same structural checks. The pipeline writes a candidate only when validation passes; failures land in `reports/ingest-quarantine.jsonl` with the reason. The PDF adapters account for every page: extracted, empty, or explicitly quarantined. Nothing is dropped silently.
+Each source is declared in a `sources.json` manifest with a `kind`, an `exam` slug, and a `year`. Exam names are free-form slugs: `poscomp`, `sat-math`, whatever you are studying. Exam-specific rules apply only to the exams that have them, and every other exam passes the same structural checks. The pipeline writes a candidate only when validation passes; failures land in `reports/ingest-quarantine.jsonl` with the reason. The LLM adapter accounts for every page it reads: extracted, empty, or explicitly quarantined. Anything the pipeline cannot trust lands in the quarantine journal with the reason, so nothing is dropped silently.
 
 Every question also carries concept tags. The tags live in a local registry, `docs/tags.md`: one concept per line with a slug, a display name, and a level (area, topic, or subtopic). Validation checks question tags against that registry, so the bank stays curatable across sources.
 
