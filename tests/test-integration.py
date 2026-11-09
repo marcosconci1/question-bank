@@ -3,6 +3,7 @@ import json
 import pytest
 from pathlib import Path
 from qdrant_client import QdrantClient
+from qdrant_client.http.exceptions import ResponseHandlingException
 
 from question_search import config, errors, flatten, ledger, store
 
@@ -13,7 +14,12 @@ def test_qdrant_live_integration_and_filtering(tmp_path, monkeypatch):
     client = QdrantClient(url=config.QDRANT_URL)
 
     # Ensure clean test collection
-    if client.collection_exists(test_collection):
+    try:
+        collection_exists = client.collection_exists(test_collection)
+    except ResponseHandlingException:
+        pytest.skip(f"Qdrant not reachable at {config.QDRANT_URL}")
+
+    if collection_exists:
         client.delete_collection(test_collection)
 
     store.ensure_collection(client=client, collection_name=test_collection, dim=4)
