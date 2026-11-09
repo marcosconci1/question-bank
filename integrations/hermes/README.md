@@ -1,27 +1,27 @@
 # Hermes question-bank plugin
 
-`question-bank/` is the self-contained Study-profile native plugin. Its
-`tools.py` implements the handlers, `questionbank-tools.py` preserves the
-original compatibility import path, and the plugin bundles the
-`question-practice` skill. The module's public MCP server remains independent.
+A native plugin for [Hermes Agent](https://hermes-agent.nousresearch.com)
+that exposes read-only question-bank access to the agent. Its `tools.py`
+implements the handlers, and the plugin bundles the `question-practice`
+skill. The module's public MCP server remains independent.
 
 ## Activation
 
-Keep the plugin inside this module and link it into the Study profile, or copy
-it to the profile's `plugins/` directory. Then enable both the plugin and its
-profile gate:
+Copy or link this `question-bank/` folder into your Hermes profile's
+`plugins/` directory. Then enable both the plugin and its profile gate:
 
 ```bash
-hermes -p study plugins enable question-bank
-hermes -p study config set question_bank.enabled true
+hermes plugins enable question-bank
+hermes config set question_bank.enabled true
 ```
 
-Start a fresh Study session after activation. Do not enable
+Start a fresh session after activation. Do not enable
 `question_bank.enabled` in profiles that should not receive these tools.
 
-When the plugin remains in this module, it finds `question-search`,
-`questions/`, and `assets/` without additional configuration. A copied
-deployment must set portable paths in its service environment:
+When the plugin sits next to a question-bank checkout, it finds
+`question-search`, `questions/`, and `assets/` without additional
+configuration. A standalone deployment must set portable paths in its
+service environment:
 
 ```ini
 QUESTION_SEARCH_BIN=/path/to/question-bank/question-search.sh
@@ -54,7 +54,7 @@ an invented presentation.
 
 ## Attempt history
 
-The three model-facing tools remain read-only. The Study skill uses the
+The three model-facing tools remain read-only. The practice skill uses the
 agent-side `question-bank/skills/question-practice/scripts/record-answer.py`
 helper through Hermes `terminal` to append graded attempts. It accepts one
 JSON object through `--input -` with required `question_id`, `session_id`,

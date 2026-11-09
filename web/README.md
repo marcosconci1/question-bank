@@ -9,7 +9,7 @@ Deleting `web/` has no effect on the `question-search` CLI or `question-bank-mcp
 Run the web server using `uv`:
 
 ```bash
-web/start.sh   # loads the Study profile .env (OPENROUTER_API_KEY); or: uv run --extra web python web/server.py
+web/start.sh   # loads a local .env (OPENROUTER_API_KEY); or: uv run --extra web python web/server.py
 ```
 
 ## Environment Variables

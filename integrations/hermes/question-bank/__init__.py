@@ -1,4 +1,4 @@
-"""Study-profile question-bank plugin and bundled practice skills."""
+"""Portable native question-bank plugin and bundled practice skills."""
 
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path

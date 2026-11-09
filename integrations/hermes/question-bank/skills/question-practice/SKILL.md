@@ -25,8 +25,8 @@ conceptual teaching or source consultation.
 
 ## Prerequisites
 
-The `question-bank` plugin and `question_bank.enabled` must be enabled in the
-Study profile. Use only `search-questions`, `get-question`, and `get-stats` for
+The `question-bank` plugin and `question_bank.enabled` must be enabled in your
+profile. Use only `search-questions`, `get-question`, and `get-stats` for
 bank access. Use `vision_analyze` for image blocks and `terminal` for the
 bundled answer recorder. Do not bypass these tools with direct bank-file or
 CLI reads.
