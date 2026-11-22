@@ -15,14 +15,19 @@ from typing import Any
 PROTECTED_FIELDS = {"id", "exam", "year", "number"}
 
 
+def corrections_path(root: Path) -> Path:
+    return root / "corrections" / "log.jsonl"
+
+
 def load_corrections(root: Path) -> dict[str, dict[str, Any]]:
     """Return ``{question_id: {field: new_value}}``. Bad lines are skipped."""
 
-    log = root / "corrections" / "log.jsonl"
+    try:
+        text = corrections_path(root).read_text(encoding="utf-8")
+    except (FileNotFoundError, IsADirectoryError):
+        return {}
     result: dict[str, dict[str, Any]] = {}
-    if not log.is_file():
-        return result
-    for line in log.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
@@ -38,8 +43,15 @@ def load_corrections(root: Path) -> dict[str, dict[str, Any]]:
     return result
 
 
-def apply_corrections(question: dict[str, Any], root: Path) -> dict[str, Any]:
-    """Return ``question`` with the overlay applied (input is not mutated)."""
+def apply_corrections(
+    question: dict[str, Any],
+    root: Path,
+    *,
+    corrections: dict[str, dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Return the corrected question, optionally using a preloaded overlay."""
 
-    fixes = load_corrections(root).get(str(question.get("id")), {})
+    if corrections is None:
+        corrections = load_corrections(root)
+    fixes = corrections.get(str(question.get("id")), {})
     return {**question, **fixes} if fixes else question

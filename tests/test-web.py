@@ -167,6 +167,55 @@ def test_question_endpoint_hides_answer(web_bank):
     assert client.get("/api/questions/missing-id").status_code == 404
 
 
+def test_web_uses_live_corrections_for_questions_sessions_and_grading(web_bank):
+    root, (q1, q2, q3) = web_bank
+    client = TestClient(create_app(root))
+    answers.create_user(root, "student")
+    assert {q["id"] for q in client.get("/api/questions").json()} == {q1["id"], q3["id"]}
+
+    log = root / "corrections" / "log.jsonl"
+    log.parent.mkdir()
+    qid = q1["id"]
+    fixed_stem = "Which answer illustrates a relational query?"
+    fixed_options = ["A browser", "A database language", "An OS"]
+    entries = [
+        (qid, "stem", fixed_stem),
+        (qid, "options", fixed_options),
+        (qid, "answer", "B"),
+        (qid, "tags", ["sql"]),
+        (q3["id"], "status", "suspended"),
+    ]
+    log.write_text(
+        "".join(
+            json.dumps({"question_id": question_id, "field": field, "new_value": value}) + "\n"
+            for question_id, field, value in entries
+        ),
+        encoding="utf-8",
+    )
+
+    listed = client.get("/api/questions").json()
+    assert [(q["id"], q["tags"]) for q in listed] == [(qid, ["sql"])]
+    question = client.get(f"/api/questions/{qid}").json()
+    assert question["stem"] == fixed_stem
+    assert question["options"] == fixed_options
+
+    session = client.post("/api/u/student/sessions", json={"count": 5}).json()
+    assert session["question_ids"] == [qid]
+    attempt = client.post(
+        "/api/u/student/answer",
+        json={"question_id": qid, "session_id": session["session_id"], "given_answer": "B"},
+    ).json()
+    assert attempt["is_correct"] is True
+    assert attempt["correct_answer"] == "B"
+
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"question_id": q2["id"], "field": "status", "new_value": "active"}) + "\n")
+    assert {q["id"] for q in client.get("/api/questions").json()} == {qid, q2["id"]}
+
+    log.unlink()
+    assert {q["id"] for q in client.get("/api/questions").json()} == {qid, q3["id"]}
+
+
 def test_session_creation(web_bank):
     root, (q1, q2, q3) = web_bank
     app = create_app(root)
