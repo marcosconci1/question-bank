@@ -51,7 +51,12 @@ async def test_mcp_tools_are_exactly_the_read_only_surface(fixture_bank):
     server = create_server(root, search_core=lambda **_: [], embedder=lambda _: [[1.0]])
     async with Client(server, mode="legacy") as client:
         tools = await client.list_tools()
-    assert {tool.name for tool in tools.tools} == {"search-questions", "get-question", "get-stats"}
+    assert {tool.name for tool in tools.tools} == {
+        "search-questions",
+        "get-question",
+        "list-topics",
+        "get-stats",
+    }
 
 
 @pytest.mark.anyio
@@ -98,13 +103,99 @@ async def test_search_questions_is_ranked_filtered_and_not_shuffled(fixture_bank
 
 
 @pytest.mark.anyio
-async def test_get_question_returns_the_complete_answer_bearing_object(fixture_bank):
+async def test_search_questions_falls_back_to_keyless_lexical_search(fixture_bank, monkeypatch):
+    root, active, _ = fixture_bank
+    monkeypatch.setattr("question_bank.mcp_server.config.OPENROUTER_API_KEY", "")
+    server = create_server(root)
+    async with Client(server, mode="legacy") as client:
+        hits = _tool_data(
+            await client.call_tool("search-questions", {"objective": "deadlock wait graph", "limit": 5})
+        )
+    assert [item["id"] for item in hits] == [active["id"]]
+
+
+@pytest.mark.anyio
+async def test_get_question_defaults_to_answer_safe_practice_view_and_supports_solution(fixture_bank):
     root, active, _ = fixture_bank
     server = create_server(root, search_core=lambda **_: [], embedder=lambda _: [[1.0]])
     async with Client(server, mode="legacy") as client:
-        question = _tool_data(await client.call_tool("get-question", {"id": active["id"]}))
-    assert question == active
-    assert question["answer"] == "A"
+        practice = _tool_data(await client.call_tool("get-question", {"id": active["id"]}))
+        solution = _tool_data(
+            await client.call_tool("get-question", {"id": active["id"], "view": "solution"})
+        )
+        invalid = await client.call_tool("get-question", {"id": active["id"], "view": "raw"})
+
+    assert "answer" not in practice
+    assert "rubric" not in practice
+    assert practice["id"] == active["id"]
+    assert practice["stem"] == active["stem"]
+    assert solution == active
+    assert solution["answer"] == "A"
+    assert invalid.is_error is True
+
+
+@pytest.mark.anyio
+async def test_list_topics_counts_active_questions_by_year_with_corrections_and_filters(tmp_path):
+    (tmp_path / "questions").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "corrections").mkdir()
+    (tmp_path / "docs" / "tags.md").write_text(
+        "# Tags\n\n## Registry (seeded)\n\n"
+        "databases | Databases | area\n"
+        "concurrency | Concurrency Control | topic\n"
+        "empty-tag | Unused Topic | subtopic\n",
+        encoding="utf-8",
+    )
+    questions = (
+        {"id": "q1", "status": "active", "year": 2022, "tags": ["databases", "concurrency"]},
+        {"id": "q2", "status": "active", "year": 2024, "tags": ["databases"]},
+        {"id": "q3", "status": "active", "year": 2024, "tags": ["databases"]},
+        {"id": "q4", "status": "suspended", "year": 2023, "tags": ["databases"]},
+    )
+    for q in questions:
+        (tmp_path / "questions" / f"{q['id']}.json").write_text(json.dumps(q), encoding="utf-8")
+    # Suspend q3 via corrections overlay so active count drops to 2 (one in 2022, one in 2024).
+    (tmp_path / "corrections" / "log.jsonl").write_text(
+        json.dumps({"question_id": "q3", "field": "status", "new_value": "suspended"}) + "\n",
+        encoding="utf-8",
+    )
+
+    server = create_server(tmp_path)
+    async with Client(server, mode="legacy") as client:
+        all_topics = _tool_data(await client.call_tool("list-topics", {}))
+        filtered = _tool_data(await client.call_tool("list-topics", {"query": "conc", "level": "topic"}))
+        limited = _tool_data(await client.call_tool("list-topics", {"limit": 1}))
+        bad_level = await client.call_tool("list-topics", {"level": "bogus"})
+
+    assert all_topics["total"] == 3
+    assert all_topics["topics"] == [
+        {
+            "slug": "databases",
+            "name": "Databases",
+            "level": "area",
+            "active_questions": 2,
+            "by_year": {"2022": 1, "2024": 1},
+        },
+        {
+            "slug": "concurrency",
+            "name": "Concurrency Control",
+            "level": "topic",
+            "active_questions": 1,
+            "by_year": {"2022": 1},
+        },
+        {
+            "slug": "empty-tag",
+            "name": "Unused Topic",
+            "level": "subtopic",
+            "active_questions": 0,
+            "by_year": {},
+        },
+    ]
+    assert filtered["total"] == 1
+    assert [t["slug"] for t in filtered["topics"]] == ["concurrency"]
+    assert limited["total"] == 3
+    assert len(limited["topics"]) == 1
+    assert bad_level.is_error is True
 
 
 @pytest.mark.anyio

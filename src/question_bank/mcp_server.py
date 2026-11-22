@@ -1,8 +1,10 @@
-"""Read-only MCP server for semantic retrieval from the question bank."""
+"""Read-only MCP server for retrieval, topic browsing, and stats over the question bank."""
 
 from __future__ import annotations
 
+import copy
 import json
+import re
 from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime
@@ -12,12 +14,18 @@ from typing import Any
 from mcp.server.mcpserver import MCPServer
 
 from question_bank import answers
-from question_bank.corrections import apply_corrections
-from question_search import config, embed, flatten, store
+from question_bank.corrections import apply_corrections, load_corrections
+from question_bank.paths import resolve_bank_root
+from question_search import config, embed, errors, flatten, lexical, store
 
 
 SearchCore = Callable[..., list[dict[str, Any]]]
 Embedder = Callable[[list[str]], list[list[float]]]
+LexicalSearch = Callable[..., list[dict[str, Any]]]
+
+_SLUG_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+_TOPIC_LEVELS = frozenset({"area", "topic", "subtopic"})
+_QUESTION_VIEWS = frozenset({"practice", "solution"})
 
 
 def _question_path(questions_dir: Path, question_id: str) -> Path:
@@ -202,42 +210,186 @@ def _calculate_stats(answers_path: Path) -> dict[str, Any]:
     }
 
 
+def _presentation_question(root: Path, question: dict[str, Any], view: str) -> dict[str, Any]:
+    """Return a practice (answer-safe) or solution copy with validated image paths."""
+    presented = copy.deepcopy(question)
+    if view == "practice":
+        presented.pop("answer", None)
+        presented.pop("rubric", None)
+
+    assets_dir = (root / "assets").resolve()
+
+    def resolve_blocks(value: Any) -> None:
+        if isinstance(value, list):
+            for item in value:
+                resolve_blocks(item)
+        elif isinstance(value, dict):
+            for item in value.values():
+                resolve_blocks(item)
+            if value.get("type") == "image" and isinstance(value.get("src"), str):
+                image_path = (root / value["src"]).resolve()
+                if not image_path.is_relative_to(assets_dir) or not image_path.is_file():
+                    raise ValueError("Question image resolves outside the bank assets or is missing")
+                value["src"] = str(image_path)
+
+    resolve_blocks(presented)
+    return presented
+
+
+def _load_registry(root: Path) -> list[tuple[str, str, str]]:
+    """Return (slug, display name, level) rows from the bank or bundled docs/tags.md."""
+    candidates = (
+        root / "docs" / "tags.md",
+        Path(__file__).resolve().parents[2] / "docs" / "tags.md",
+    )
+    text = ""
+    for candidate in candidates:
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8")
+            break
+    if not text:
+        return []
+
+    rows: list[tuple[str, str, str]] = []
+    in_registry = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("## Registry"):
+            in_registry = True
+            continue
+        if in_registry and line.startswith("## "):
+            break
+        parts = [part.strip() for part in line.split("|")]
+        if in_registry and len(parts) == 3 and _SLUG_RE.fullmatch(parts[0]):
+            rows.append((parts[0], parts[1], parts[2]))
+    return rows
+
+
+def _list_topics(
+    root: Path,
+    *,
+    query: str | None = None,
+    level: str | None = None,
+    limit: int = 40,
+) -> dict[str, Any]:
+    if query is not None and not isinstance(query, str):
+        raise ValueError("query must be a string")
+    if level is not None and level not in _TOPIC_LEVELS:
+        raise ValueError("level must be one of: area, topic, subtopic")
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 200:
+        raise ValueError("limit must be an integer between 1 and 200")
+
+    questions_dir = root / "questions"
+    fixes = load_corrections(root)
+    counts: dict[str, int] = defaultdict(int)
+    year_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
+    if questions_dir.is_dir():
+        for path in sorted(questions_dir.glob("*.json")):
+            try:
+                question = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(question, dict):
+                continue
+            fix = fixes.get(str(question.get("id")))
+            if fix:
+                question = {**question, **fix}
+            if (question.get("status") or "active") != "active":
+                continue
+            year = question.get("year")
+            for tag in question.get("tags") or []:
+                if isinstance(tag, str) and tag:
+                    counts[tag] += 1
+                    if isinstance(year, int) and not isinstance(year, bool):
+                        year_counts[tag][year] += 1
+
+    needle = query.strip().lower() if query else ""
+    topics = [
+        {
+            "slug": slug,
+            "name": name,
+            "level": lvl,
+            "active_questions": counts.get(slug, 0),
+            "by_year": {
+                str(year): count for year, count in sorted(year_counts.get(slug, {}).items())
+            },
+        }
+        for slug, name, lvl in _load_registry(root)
+        if (not level or lvl == level) and needle in f"{slug} {name}".lower()
+    ]
+    topics.sort(key=lambda item: (-item["active_questions"], item["slug"]))
+    return {"total": len(topics), "topics": topics[:limit]}
+
+
 def create_server(
     bank_root: Path | None = None,
     answers_path: Path | None = None,
-    search_core: SearchCore = store.search_questions,
-    embedder: Embedder = embed.embed,
+    search_core: SearchCore | None = None,
+    embedder: Embedder | None = None,
+    lexical_search: LexicalSearch = lexical.search,
 ) -> MCPServer:
     """Create the stdio MCP server, optionally with paths/core functions for tests."""
-    root = (bank_root or config.BANK_ROOT).resolve()
+    root = (bank_root or resolve_bank_root()).resolve()
     questions_dir = root / "questions"
     answer_log = answers_path or answers.answers_path(root)
+    explicit_semantic = search_core is not None or embedder is not None
     server = MCPServer(
         name="question-bank",
         title="Question Bank",
-        description="Read-only semantic retrieval over the question bank.",
+        description="Read-only retrieval, topic browsing, and stats over the question bank.",
     )
 
     @server.tool(name="search-questions", description="Return ranked questions that best match a student objective.")
     def search_questions(objective: str, filters: dict[str, Any] = {}, limit: int = 10) -> list[dict[str, Any]]:
-        """Search the semantic index; filters are enforced by the existing search core."""
+        """Search the bank using semantic search when available, falling back to local BM25."""
         if not isinstance(objective, str) or not objective.strip():
             raise ValueError("objective must be a non-empty string")
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
             raise ValueError("limit must be a non-negative integer")
 
+        query_text = objective.strip()
         tags, exam, year_range, status = _normalise_filters(filters)
-        vectors = embedder([objective.strip()])
-        if not vectors:
-            raise ValueError("Embedding returned no query vector")
-        ranked = search_core(
-            query_vector=vectors[0],
-            limit=limit,
-            status=status,
-            exam=exam,
-            year_range=year_range,
-            tags=tags,
-        )
+        ranked: list[dict[str, Any]] | None = None
+        if explicit_semantic:
+            active_embedder = embedder or embed.embed
+            active_search = search_core or store.search_questions
+            vectors = active_embedder([query_text])
+            if not vectors:
+                raise ValueError("Embedding returned no query vector")
+            ranked = active_search(
+                query_vector=vectors[0],
+                limit=limit,
+                status=status,
+                exam=exam,
+                year_range=year_range,
+                tags=tags,
+            )
+        elif config.OPENROUTER_API_KEY:
+            try:
+                vectors = embed.embed([query_text])
+                if not vectors:
+                    raise errors.EmbeddingApiError("Embedding returned no query vector")
+                ranked = store.search_questions(
+                    query_vector=vectors[0],
+                    limit=limit,
+                    status=status,
+                    exam=exam,
+                    year_range=year_range,
+                    tags=tags,
+                )
+            except errors.QuestionSearchError:
+                ranked = None
+
+        if ranked is None:
+            ranked = lexical_search(
+                query_text,
+                limit=limit,
+                status=status,
+                exam=exam,
+                year_range=year_range,
+                tags=tags,
+                root=root,
+            )
 
         results: list[dict[str, Any]] = []
         for result in ranked[:limit]:
@@ -256,13 +408,30 @@ def create_server(
             )
         return results
 
-    @server.tool(name="get-question", description="Return the complete stored question, including its answer key or rubric.")
-    def get_question(id: str) -> dict[str, Any]:
-        """Read one source-of-truth question object without withholding answer data."""
+    @server.tool(
+        name="get-question",
+        description="Return a stored question in answer-safe practice view (default) or solution view.",
+    )
+    def get_question(id: str, view: str = "practice") -> dict[str, Any]:
+        """Read one question: practice view omits answer/rubric; solution view includes them."""
         if not isinstance(id, str):
             raise ValueError("id must be a string")
+        if not isinstance(view, str) or view not in _QUESTION_VIEWS:
+            raise ValueError("view must be 'practice' or 'solution'")
         _, question = _read_question(questions_dir, id)
-        return question
+        return _presentation_question(root, question, view)
+
+    @server.tool(
+        name="list-topics",
+        description="List registered topic tags (slug, name, level) with active question counts and per-year frequency.",
+    )
+    def list_topics(
+        query: str | None = None,
+        level: str | None = None,
+        limit: int = 40,
+    ) -> dict[str, Any]:
+        """List registered topics with active counts and by_year breakdown."""
+        return _list_topics(root, query=query, level=level, limit=limit)
 
     @server.tool(name="get-stats", description="Return accuracy aggregations from the append-only answer log.")
     def get_stats() -> dict[str, Any]:
