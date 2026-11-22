@@ -714,12 +714,12 @@
       app.appendChild(gradeDiv);
       app.appendChild(feedbackArea);
 
-      revealLink.addEventListener('click', async (e) => {
+      revealLink.addEventListener('click', (e) => {
         e.preventDefault();
         revealLink.style.display = 'none';
 
         // Discursive grading
-        const rubricContent = question.rubric || question.answer || 'Official rubric not provided.';
+        const rubricContent = question.rubric || 'Official rubric not provided.';
         rubricBox.innerHTML = '<div class="callout-title" style="margin-bottom:0.5rem;">Official Rubric</div>';
         rubricBox.appendChild(renderBlockOrContent(rubricContent));
         rubricBox.style.display = 'block';
