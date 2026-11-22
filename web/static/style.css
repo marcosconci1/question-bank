@@ -497,9 +497,9 @@ header.masthead {
 
 .topic-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
-  justify-content: space-between;
-  gap: 1.5rem;
+  gap: 0.35rem 1.5rem;
   padding: 0.85rem 1.1rem;
   background: var(--panel);
   border: 1px solid var(--panel-edge);
@@ -507,7 +507,7 @@ header.masthead {
 }
 
 .topic-info {
-  flex: 1 1 12rem;
+  flex: 1 1 14rem;
   min-width: 0;
 }
 
@@ -520,7 +520,12 @@ header.masthead {
 .topic-bars {
   display: flex;
   align-items: flex-end;
-  gap: 0.5rem;
+  gap: 0.25rem;
+  order: 3;
+  flex: 1 1 100%;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
 }
 
 .topic-bar-col {
@@ -528,11 +533,14 @@ header.masthead {
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
-  min-width: 2.4rem;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 3rem;
 }
 
 .topic-bar {
-  width: 100%;
+  width: 72%;
+  min-height: 2px;
   background: var(--quiet);
   border: 1px solid var(--panel-edge);
 }
@@ -544,11 +552,13 @@ header.masthead {
 
 .topic-bar-year {
   color: var(--quiet);
-  font-size: 0.75rem;
+  font-size: 0.65rem;
 }
 
 .topic-practice {
   flex: 0 0 auto;
+  order: 2;
+  margin-left: auto;
   align-self: center;
   color: var(--heading);
 }
