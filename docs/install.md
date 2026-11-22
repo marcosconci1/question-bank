@@ -12,14 +12,13 @@ cd question-bank
 uv sync --locked
 ```
 
-This installs two commands into the project environment:
+This installs the project commands into the environment:
 
-- `question-bank`: ingestion and diagnostics (`ingest`, `doctor`, `diagnose`)
+- `qb` (alias for `question-bank`): `init`, `ingest`, `validate`, `search`, `stats`, `mcp`, `doctor`, `diagnose`
 - `question-search`: retrieval (`index`, `query`, `status`)
+- `question-bank-mcp`: read-only stdio MCP server (`search-questions`, `get-question`, `list-topics`, `get-stats`)
 
-There is also an MCP server (`question-bank-mcp`) for coding agents, a
-read-only Hermes Agent plugin under `integrations/hermes/`, and an
-optional web UI under `web/`.
+Agent integrations live under `integrations/` (`hermes/`, `claude/`, `codex/`), and an optional web UI lives under `web/`.
 
 ## Where the bank lives
 

@@ -42,8 +42,16 @@ Every question also carries concept tags. The tags live in a local registry, `do
 ## Quick start
 
 ```bash
-# Declare a source: reports/sources.json next to your bank
-cat > reports/sources.json <<'EOF'
+uv sync --locked                      # install the CLI and search engine
+uv run qb init --with-example         # create a local bank + sample CSV
+uv run qb ingest                      # validate and load declared sources
+uv run qb search "hash function"      # keyless local BM25 search
+uv run qb doctor                      # check configuration and storage
+```
+
+Or declare your own source in `reports/sources.json` next to your bank (CSV, exam-board PDF, or text-layer PDF):
+
+```json
 [
   {
     "id": "my-exam-2025",
@@ -54,12 +62,6 @@ cat > reports/sources.json <<'EOF'
     "options": {"answer_column": "key", "id_prefix": "my-exam-"}
   }
 ]
-EOF
-
-uv run question-bank ingest          # run the pipeline
-uv run question-bank doctor          # check configuration and storage
-uv run question-search index         # build the local index
-uv run question-search query "hash tables"
 ```
 
 CSV ingestion works offline. PDF ingestion through the LLM adapter needs an OpenRouter key and uses the model in `QUESTION_EXTRACT_MODEL` (default `openai/gpt-4o-mini`) at temperature 0, with one bounded repair call per batch.
@@ -68,13 +70,14 @@ CSV ingestion works offline. PDF ingestion through the LLM adapter needs an Open
 
 | Piece | What it does |
 | --- | --- |
-| `question-bank` CLI | `ingest`, `doctor`, `diagnose`: run the pipeline, check health, write a redacted diagnostic bundle |
+| `qb` / `question-bank` CLI | `init`, `ingest`, `validate`, `search`, `stats`, `mcp`, `doctor`, `diagnose` |
 | `src/question_bank/` | Adapters, validation, provenance, quarantine, event journal |
 | `question-search` CLI | Local BM25 search, optional semantic search, index status |
-| MCP server | Exposes bank queries to coding agents over stdio |
-| `web/` | Local web UI for browsing the bank |
+| MCP server (`question-bank-mcp`) | Exposes `search-questions`, `get-question`, `list-topics`, and `get-stats` over stdio |
+| `integrations/` | Plugins and setup guides for Hermes Agent, Claude Code, and Codex |
+| `web/` | Optional local web UI for practice, search, stats, and topic frequency |
 | Tags registry | `docs/tags.md`: concept slugs with names and levels, checked at validation |
-| `docs/` | `ingestion.md` and more: manifest format, adapters, env vars |
+| `docs/` | `install.md`, `ingestion.md`, `querying.md`, `tags.md` |
 
 Diagnostics are local by design: `doctor` reports per-check OK/WARN/FAIL and exits nonzero on failure; the JSONL journal keeps 30 days (1 MB) of ingestion and doctor events with secrets scrubbed on write; `diagnose` prints a redacted bundle with no home paths, no file contents, and no key values. There is no telemetry.
 
