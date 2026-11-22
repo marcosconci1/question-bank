@@ -28,6 +28,7 @@ from starlette.staticfiles import StaticFiles
 import uvicorn
 
 from question_bank import answers
+from question_bank.corrections import apply_corrections, corrections_path, load_corrections
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -48,15 +49,23 @@ class BankManager:
         self.root = root.resolve()
         self.questions_dir = (self.root / "questions").resolve()
         self.assets_dir = (self.root / "assets").resolve()
-        self._mtime = -1.0
+        self._corrections_path = corrections_path(self.root)
+        self._cache_key: tuple[int, tuple[int, int, int] | None] | None = None
         self._questions: list[dict[str, Any]] = []
         self._by_id: dict[str, dict[str, Any]] = {}
 
     def get_questions(self) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
         if not self.questions_dir.is_dir():
             return [], {}
-        mtime = self.questions_dir.stat().st_mtime
-        if mtime != self._mtime:
+        try:
+            log_stat = self._corrections_path.stat()
+        except FileNotFoundError:
+            log_version = None
+        else:
+            log_version = (log_stat.st_ino, log_stat.st_mtime_ns, log_stat.st_size)
+        cache_key = (self.questions_dir.stat().st_mtime_ns, log_version)
+        if cache_key != self._cache_key:
+            corrections = load_corrections(self.root)
             loaded_list: list[dict[str, Any]] = []
             by_id: dict[str, dict[str, Any]] = {}
             for path in sorted(self.questions_dir.glob("*.json")):
@@ -66,6 +75,7 @@ class BankManager:
                     continue
                 if not isinstance(data, dict):
                     continue
+                data = apply_corrections(data, self.root, corrections=corrections)
                 qid = data.get("id") or path.stem
                 summary = {
                     "id": qid,
@@ -78,9 +88,9 @@ class BankManager:
                 }
                 loaded_list.append(summary)
                 by_id[qid] = data
-            self._mtime = mtime
             self._questions = loaded_list
             self._by_id = by_id
+            self._cache_key = cache_key
         return self._questions, self._by_id
 
     def get_single_question(self, qid: str) -> dict[str, Any] | None:
@@ -91,9 +101,9 @@ class BankManager:
             return None
         try:
             data = json.loads(target.read_text(encoding="utf-8"))
-            return data if isinstance(data, dict) else None
         except Exception:
             return None
+        return apply_corrections(data, self.root) if isinstance(data, dict) else None
 
 
 def _validate_user_or_response(user: str, root: Path) -> Response | None:
