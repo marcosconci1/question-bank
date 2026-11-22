@@ -15,6 +15,7 @@ from question_bank.validate import load_registered_tags, validate_question
 
 from .csv_adapter import CsvAdapter
 from .board_adapter import BoardPdfAdapter
+from .json_adapter import JsonAdapter
 from .llm_adapter import PdfLlmAdapter
 from .manifest import Source, load_manifest
 
@@ -29,32 +30,30 @@ class IngestSummary:
         return {"ingested": self.ingested, "skipped": self.skipped, "quarantined": self.quarantined}
 
 
-def run_ingest(
-    manifest_path: Path | None = None,
-    source_id: str | None = None,
+def run_sources(
+    sources: Iterable[Source],
     *,
     dry_run: bool = False,
     bank_root: Path | None = None,
     tags_path: Path | None = None,
+    quarantine_path: Path | None = None,
     adapters: dict[str, Any] | None = None,
 ) -> IngestSummary:
-    """Run selected pending sources, validating before every question write."""
+    """Validate and persist candidates from already-constructed ``Source`` objects."""
 
     root = Path(bank_root).resolve() if bank_root is not None else resolve_bank_root()
-    manifest_file = Path(manifest_path).expanduser().resolve() if manifest_path else root / "reports" / "sources.json"
     questions_dir = root / "questions"
-    quarantine_path = root / "reports" / "ingest-quarantine.jsonl"
+    rejects_path = (
+        Path(quarantine_path).expanduser().resolve()
+        if quarantine_path is not None
+        else root / "reports" / "ingest-quarantine.jsonl"
+    )
     registry_path = Path(tags_path) if tags_path is not None else resolve_tags(root)
     registered_tags = load_registered_tags(registry_path)
-    sources = load_manifest(manifest_file)
-    if source_id is not None:
-        selected = [source for source in sources if source.id == source_id]
-        if not selected:
-            raise ValueError(f"unknown source id: {source_id}")
-        sources = selected
 
     adapter_map = {
         "csv": CsvAdapter(),
+        "json": JsonAdapter(),
         "pdf-board": BoardPdfAdapter(),
         "pdf-llm": PdfLlmAdapter(),
         **(adapters or {}),
@@ -100,8 +99,36 @@ def run_ingest(
             ingested += 1
 
     if rejected and not dry_run:
-        quarantine_path.parent.mkdir(parents=True, exist_ok=True)
-        with quarantine_path.open("a", encoding="utf-8") as handle:
+        rejects_path.parent.mkdir(parents=True, exist_ok=True)
+        with rejects_path.open("a", encoding="utf-8") as handle:
             for record in rejected:
                 handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return IngestSummary(ingested, skipped, quarantined)
+
+
+def run_ingest(
+    manifest_path: Path | None = None,
+    source_id: str | None = None,
+    *,
+    dry_run: bool = False,
+    bank_root: Path | None = None,
+    tags_path: Path | None = None,
+    adapters: dict[str, Any] | None = None,
+) -> IngestSummary:
+    """Run selected pending sources, validating before every question write."""
+
+    root = Path(bank_root).resolve() if bank_root is not None else resolve_bank_root()
+    manifest_file = Path(manifest_path).expanduser().resolve() if manifest_path else root / "reports" / "sources.json"
+    sources = load_manifest(manifest_file)
+    if source_id is not None:
+        selected = [source for source in sources if source.id == source_id]
+        if not selected:
+            raise ValueError(f"unknown source id: {source_id}")
+        sources = selected
+    return run_sources(
+        sources,
+        dry_run=dry_run,
+        bank_root=root,
+        tags_path=tags_path,
+        adapters=adapters,
+    )

@@ -1,29 +1,28 @@
 """Qdrant vector store operations: collection setup, deterministic point IDs, upsert, delete, and filtered search."""
+from __future__ import annotations
+
 import uuid
 from typing import Any
 
-from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    Distance,
-    FieldCondition,
-    Filter,
-    MatchAny,
-    MatchValue,
-    PayloadSchemaType,
-    PointIdsList,
-    PointStruct,
-    Range,
-    VectorParams,
-)
-
 from . import config, errors
 
-_client: QdrantClient | None = None
+_client: Any = None
 
 
-def get_client(url: str | None = None) -> QdrantClient:
+def _import_qdrant() -> tuple[Any, Any]:
+    try:
+        from qdrant_client import QdrantClient, models
+    except ImportError as exc:
+        raise errors.QdrantUnreachableError(
+            "Semantic search requires the optional 'semantic' extra: uv sync --extra semantic"
+        ) from exc
+    return QdrantClient, models
+
+
+def get_client(url: str | None = None) -> Any:
     """Return a Qdrant client instance."""
     global _client
+    QdrantClient, _ = _import_qdrant()
     target_url = url or config.QDRANT_URL
     if _client is None or url is not None:
         try:
@@ -42,11 +41,12 @@ def make_point_id(question_id: str) -> int:
 
 
 def ensure_collection(
-    client: QdrantClient | None = None,
+    client: Any = None,
     collection_name: str | None = None,
     dim: int | None = None,
 ) -> None:
     """Ensure that the Qdrant collection exists with the required vector configuration and indexes."""
+    _, models = _import_qdrant()
     c = client or get_client()
     coll = collection_name or config.COLLECTION
     dimension = dim or config.EMBEDDING_DIM
@@ -55,14 +55,14 @@ def ensure_collection(
         if not c.collection_exists(coll):
             c.create_collection(
                 collection_name=coll,
-                vectors_config=VectorParams(size=dimension, distance=Distance.COSINE),
+                vectors_config=models.VectorParams(size=dimension, distance=models.Distance.COSINE),
             )
             # Create payload indexes to enable fast deterministic filtering
             try:
-                c.create_payload_index(collection_name=coll, field_name="status", field_schema=PayloadSchemaType.KEYWORD)
-                c.create_payload_index(collection_name=coll, field_name="exam", field_schema=PayloadSchemaType.KEYWORD)
-                c.create_payload_index(collection_name=coll, field_name="year", field_schema=PayloadSchemaType.INTEGER)
-                c.create_payload_index(collection_name=coll, field_name="tags", field_schema=PayloadSchemaType.KEYWORD)
+                c.create_payload_index(collection_name=coll, field_name="status", field_schema=models.PayloadSchemaType.KEYWORD)
+                c.create_payload_index(collection_name=coll, field_name="exam", field_schema=models.PayloadSchemaType.KEYWORD)
+                c.create_payload_index(collection_name=coll, field_name="year", field_schema=models.PayloadSchemaType.INTEGER)
+                c.create_payload_index(collection_name=coll, field_name="tags", field_schema=models.PayloadSchemaType.KEYWORD)
             except Exception:
                 pass
     except errors.QuestionSearchError:
@@ -75,18 +75,19 @@ def ensure_collection(
 
 def upsert_points(
     points_data: list[tuple[int, list[float], dict[str, Any]]],
-    client: QdrantClient | None = None,
+    client: Any = None,
     collection_name: str | None = None,
     batch_size: int = 100,
 ) -> None:
     """Upsert question points into Qdrant in batches."""
     if not points_data:
         return
+    _, models = _import_qdrant()
     c = client or get_client()
     coll = collection_name or config.COLLECTION
 
     points = [
-        PointStruct(id=pid, vector=vec, payload=payload)
+        models.PointStruct(id=pid, vector=vec, payload=payload)
         for pid, vec, payload in points_data
     ]
 
@@ -102,19 +103,20 @@ def upsert_points(
 
 def delete_points(
     point_ids: list[int],
-    client: QdrantClient | None = None,
+    client: Any = None,
     collection_name: str | None = None,
 ) -> None:
     """Delete points from Qdrant by point ID."""
     if not point_ids:
         return
+    _, models = _import_qdrant()
     c = client or get_client()
     coll = collection_name or config.COLLECTION
 
     try:
         c.delete(
             collection_name=coll,
-            points_selector=PointIdsList(points=point_ids),
+            points_selector=models.PointIdsList(points=point_ids),
         )
     except errors.QuestionSearchError:
         raise
@@ -122,7 +124,7 @@ def delete_points(
         raise errors.QdrantUnreachableError(f"Failed to delete points from Qdrant: {exc}") from exc
 
 
-def count_points(client: QdrantClient | None = None, collection_name: str | None = None) -> int:
+def count_points(client: Any = None, collection_name: str | None = None) -> int:
     """Return the total number of points in the collection."""
     c = client or get_client()
     coll = collection_name or config.COLLECTION
@@ -144,31 +146,32 @@ def search_questions(
     exam: str | None = None,
     year_range: tuple[int, int] | None = None,
     tags: list[str] | None = None,
-    client: QdrantClient | None = None,
+    client: Any = None,
     collection_name: str | None = None,
 ) -> list[dict[str, Any]]:
     """Query Qdrant for questions using cosine similarity and payload filters."""
+    _, models = _import_qdrant()
     c = client or get_client()
     coll = collection_name or config.COLLECTION
 
     conditions = []
     if status and status.lower() != "all":
-        conditions.append(FieldCondition(key="status", match=MatchValue(value=status)))
+        conditions.append(models.FieldCondition(key="status", match=models.MatchValue(value=status)))
 
     if exam:
-        conditions.append(FieldCondition(key="exam", match=MatchValue(value=exam.lower())))
+        conditions.append(models.FieldCondition(key="exam", match=models.MatchValue(value=exam.lower())))
 
     if year_range:
         min_year, max_year = year_range
-        conditions.append(FieldCondition(key="year", range=Range(gte=min_year, lte=max_year)))
+        conditions.append(models.FieldCondition(key="year", range=models.Range(gte=min_year, lte=max_year)))
 
     if tags:
         # Match any tag
         clean_tags = [t.strip() for t in tags if t.strip()]
         if clean_tags:
-            conditions.append(FieldCondition(key="tags", match=MatchAny(any=clean_tags)))
+            conditions.append(models.FieldCondition(key="tags", match=models.MatchAny(any=clean_tags)))
 
-    query_filter = Filter(must=conditions) if conditions else None
+    query_filter = models.Filter(must=conditions) if conditions else None
 
     try:
         resp = c.query_points(

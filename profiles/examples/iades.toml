@@ -1,0 +1,8 @@
+name = "iades"
+kind = "pdf-board"
+exam = "iades"
+description = "IADES public-sector IT exam booklet and answer key."
+
+[options]
+board = "iades"
+answer_key_kind = "final"

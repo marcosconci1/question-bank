@@ -829,11 +829,21 @@ source = { editable = "." }
 dependencies = [
     { name = "httpx" },
     { name = "mcp" },
-    { name = "pymupdf" },
-    { name = "qdrant-client" },
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "pymupdf" },
+    { name = "qdrant-client" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+import = [
+    { name = "pymupdf" },
+]
+semantic = [
+    { name = "qdrant-client" },
+]
 web = [
     { name = "starlette" },
     { name = "uvicorn" },
@@ -848,12 +858,16 @@ dev = [
 requires-dist = [
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "mcp", specifier = ">=2.3.0" },
-    { name = "pymupdf", specifier = ">=1.28.2" },
-    { name = "qdrant-client", specifier = ">=1.12.0" },
+    { name = "pymupdf", marker = "extra == 'all'", specifier = ">=1.28.2" },
+    { name = "pymupdf", marker = "extra == 'import'", specifier = ">=1.28.2" },
+    { name = "qdrant-client", marker = "extra == 'all'", specifier = ">=1.12.0" },
+    { name = "qdrant-client", marker = "extra == 'semantic'", specifier = ">=1.12.0" },
+    { name = "starlette", marker = "extra == 'all'", specifier = ">=0.40" },
     { name = "starlette", marker = "extra == 'web'", specifier = ">=0.40" },
+    { name = "uvicorn", marker = "extra == 'all'", specifier = ">=0.30" },
     { name = "uvicorn", marker = "extra == 'web'", specifier = ">=0.30" },
 ]
-provides-extras = ["web"]
+provides-extras = ["import", "semantic", "web", "all"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.0" }]

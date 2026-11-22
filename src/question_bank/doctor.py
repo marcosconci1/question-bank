@@ -15,6 +15,7 @@ from typing import Any
 
 from question_bank.ingest.board_adapter import BoardPdfAdapter
 from question_bank.ingest.csv_adapter import CsvAdapter
+from question_bank.ingest.json_adapter import JsonAdapter
 from question_bank.ingest.llm_adapter import DEFAULT_EXTRACT_MODEL, PdfLlmAdapter
 from question_bank.ingest.manifest import load_manifest
 from question_bank.paths import resolve_bank_root
@@ -23,7 +24,7 @@ from question_bank.validate import load_registered_tags
 
 from .journal import append_event, journal_path, read_events
 
-ADAPTERS = {"csv": CsvAdapter, "pdf-board": BoardPdfAdapter, "pdf-llm": PdfLlmAdapter}
+ADAPTERS = {"csv": CsvAdapter, "json": JsonAdapter, "pdf-board": BoardPdfAdapter, "pdf-llm": PdfLlmAdapter}
 
 
 def _result(name: str, status: str, message: str) -> dict[str, str]:

@@ -30,7 +30,7 @@ The manifest is a JSON array. Each entry has these required fields:
 | Field | Description |
 | --- | --- |
 | `id` | Unique identifier for this source entry. |
-| `kind` | Adapter kind: `csv`, `pdf-board`, or `pdf-llm`. |
+| `kind` | Adapter kind: `csv`, `json`, `pdf-board`, or `pdf-llm`. |
 | `path` | Path to the source file, relative to the manifest. |
 | `exam` | Exam slug. It is normalized to lowercase and is not restricted to a list of known exams. |
 | `year` | Integer exam year. |
@@ -38,7 +38,7 @@ The manifest is a JSON array. Each entry has these required fields:
 
 `csv` reads structured question records from a CSV file. By default, it reads `id`, `stem`, `number`, `options`, and `answer` columns, and derives tags from `knowledge_area`, `area`, and `subarea`. Set `options_columns` to name separate option columns, or set `options_column` for a column containing a Python or JSON list of strings. Column names, ID prefix, source text template, type, status, and tag columns can be configured in `options`.
 
-`pdf-board` parses exam booklets and answer keys using the existing board parser. Its `options` must include `banca`, `organ`, `role`, and `caderno`. This adapter currently supports the `fgv`, `iades`, `cesgranrio`, and `fcpc` board formats. An answer key can be supplied with `gabarito_path` or `answer_key_path`; related settings include `gabarito_kind`, `prova_url`, `prova_sha256`, `gabarito_url`, and `gabarito_sha256`.
+`pdf-board` parses Brazilian public-sector exam booklets and answer keys. Its `options` must include `board`, `agency`, `role`, and `booklet`. Supported board formats are `fgv`, `iades`, `cesgranrio`, and `fcpc`. Set `answer_key_path` to the answer-key PDF and supply the official source URLs and SHA-256 digests with `booklet_url`, `booklet_sha256`, `answer_key_url`, and `answer_key_sha256`. Set `answer_key_kind` to `final` (the default) or `preliminary`. Questions with a preliminary answer key are suspended. Existing manifests continue to work.
 
 `pdf-llm` extracts multiple-choice questions from PDFs that contain a text layer. Its optional `batch_pages` setting controls the number of pages sent in each extraction request and defaults to 4. Other options, such as `tags`, can be supplied in the same object.
 
@@ -68,12 +68,12 @@ Example manifest:
     "exam": "fgv",
     "year": 2025,
     "options": {
-      "banca": "fgv",
-      "organ": "sample-organization",
+      "board": "fgv",
+      "agency": "TRF1",
       "role": "analyst",
-      "caderno": "type-1",
-      "gabarito_path": "fgv-sample-answer-key.pdf",
-      "gabarito_kind": "definitivo"
+      "booklet": "Tipo 1",
+      "answer_key_path": "fgv-sample-answer-key.pdf",
+      "answer_key_kind": "final"
     }
   }
 ]
@@ -90,6 +90,25 @@ Every written question includes a `provenance` object. CSV provenance records th
 The PDF LLM adapter groups pages according to `options.batch_pages`, which defaults to 4. Each batch is sent with temperature 0 and must return strict JSON matching the extraction schema. If the response is invalid, the adapter makes one repair attempt for that batch. A batch that remains invalid is quarantined as a unit with its page range and failure reason; other batches continue independently.
 
 The adapter keeps page accounting for each processed page, with outcomes such as yielded candidate, empty, or quarantined. A PDF must provide selectable text for extraction. Scanned pages without a text layer yield no question candidates; OCR is not performed. Use a text-layer PDF for this adapter.
+
+## Direct imports and TOML profiles
+
+For one-off imports without writing a manifest, use `qb import`:
+
+```bash
+uv run qb import questions.csv --exam my-exam --year 2025
+uv run qb import questions.json --exam my-exam --year 2025 --rejects rejects.jsonl
+```
+
+For a board PDF import, set `BOOKLET_URL` and `ANSWER_KEY_URL` to the official source URLs and pass the role and booklet labels as printed in the source documents. `qb import` computes the local PDFs' SHA-256 digests when you omit them.
+
+```bash
+uv run --extra import qb import pdf booklet.pdf --profile fgv --year 2024 \
+  --agency TRF1 --role 'Técnico Judiciário TI' --booklet 'Tipo 1' \
+  --answer-key answer-key.pdf --booklet-url "$BOOKLET_URL" --answer-key-url "$ANSWER_KEY_URL"
+```
+
+Example declarative profiles live under `profiles/examples/` (`fgv`, `iades`, `cesgranrio`, `fcpc`, `poscomp`, `enade`). Each TOML file declares `name`, `kind`, `exam`, and an `[options]` table passed to the matching adapter; custom `.toml` paths can be passed directly to `--profile`.
 
 ## Environment variables
 

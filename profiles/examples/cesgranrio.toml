@@ -1,0 +1,8 @@
+name = "cesgranrio"
+kind = "pdf-board"
+exam = "cesgranrio"
+description = "CESGRANRIO public-sector IT exam booklet and answer key."
+
+[options]
+board = "cesgranrio"
+answer_key_kind = "final"

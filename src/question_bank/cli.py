@@ -3,13 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import hashlib
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from question_bank import answers
 from question_bank.doctor import build_diagnose_bundle, print_doctor, run_doctor
-from question_bank.ingest.pipeline import run_ingest
+from question_bank.ingest.manifest import Source
+from question_bank.ingest.pipeline import run_ingest, run_sources
+from question_bank.ingest.profiles import build_source_from_profile, load_profile
 from question_bank.journal import append_event
 from question_bank.mcp_server import _calculate_stats, create_server
 from question_bank.paths import resolve_bank_root
@@ -126,6 +132,129 @@ def _cmd_search(root: Path, search_args: list[str]) -> int:
     return search_cli.main(search_args)
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _detect_csv_options(csv_path: Path) -> dict[str, Any]:
+    options: dict[str, Any] = {}
+    try:
+        with csv_path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.reader(handle)
+            header = [col.strip() for col in next(reader, [])]
+    except OSError:
+        return options
+    header_set = set(header)
+    if "options" not in header_set:
+        if all(col in header_set for col in ("A", "B", "C", "D", "E")):
+            options["options_columns"] = ["A", "B", "C", "D", "E"]
+        elif all(col in header_set for col in ("A", "B", "C", "D")):
+            options["options_columns"] = ["A", "B", "C", "D"]
+    if not any(col in header_set for col in ("knowledge_area", "area", "subarea")):
+        for candidate in ("tags", "tag", "topic"):
+            if candidate in header_set:
+                options["tags_columns"] = [candidate]
+                break
+    return options
+
+
+def _cmd_import(root: Path, args: argparse.Namespace) -> int:
+    targets: list[str] = list(args.target)
+    mode_hint: str | None = None
+    if len(targets) == 2 and targets[0].lower() in {"pdf", "csv", "json"}:
+        mode_hint = targets[0].lower()
+        file_path = Path(targets[1]).expanduser().resolve()
+    elif len(targets) == 1:
+        file_path = Path(targets[0]).expanduser().resolve()
+    else:
+        print("usage: qb import [pdf|csv|json] <file> [options]", file=sys.stderr)
+        return 2
+
+    if not file_path.is_file():
+        print(f"Import file not found: {file_path}", file=sys.stderr)
+        return 2
+
+    year = args.year if args.year is not None else datetime.now(timezone.utc).year
+    extra_options: dict[str, Any] = {}
+    for name in (
+        "agency", "role", "booklet", "answer_key_kind", "booklet_url",
+        "booklet_sha256", "answer_key_url", "answer_key_sha256",
+    ):
+        value = getattr(args, name)
+        if value:
+            extra_options[name] = value
+    if args.answer_key:
+        answer_key_path = args.answer_key.expanduser().resolve()
+        extra_options["answer_key_path"] = str(answer_key_path)
+        if answer_key_path.is_file() and "answer_key_sha256" not in extra_options:
+            extra_options["answer_key_sha256"] = _sha256_file(answer_key_path)
+
+    if args.profile:
+        try:
+            profile = load_profile(args.profile)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if profile.kind == "pdf-board" and "booklet_sha256" not in extra_options:
+            extra_options["booklet_sha256"] = _sha256_file(file_path)
+        source = build_source_from_profile(
+            profile,
+            file_path,
+            year=year,
+            exam=args.exam,
+            extra_options=extra_options,
+        )
+    else:
+        suffix = file_path.suffix.lower()
+        kind = mode_hint
+        if kind is None:
+            if suffix == ".csv":
+                kind = "csv"
+            elif suffix in {".json", ".jsonl"}:
+                kind = "json"
+            elif suffix == ".pdf":
+                kind = "pdf"
+        if kind == "pdf":
+            kind = "pdf-llm"
+        if kind not in {"csv", "json", "pdf-llm"}:
+            print(f"Unsupported import file type: {file_path.name} (pass --profile or use .csv/.json/.jsonl)", file=sys.stderr)
+            return 2
+        options = _detect_csv_options(file_path) if kind == "csv" else {}
+        options.update(extra_options)
+        exam_slug = (args.exam or file_path.stem).strip().lower()
+        source = Source(
+            id=f"import-{file_path.stem}",
+            kind=kind,
+            path=file_path,
+            exam=exam_slug,
+            year=year,
+            options=options,
+        )
+
+    append_event(root, "import_start", "started", source_id=source.id, kind=source.kind, dry_run=args.dry_run)
+    try:
+        summary = run_sources(
+            [source],
+            dry_run=args.dry_run,
+            bank_root=root,
+            quarantine_path=args.rejects,
+        )
+    except Exception as exc:
+        append_event(root, "import_finish", "failed", error_type=type(exc).__name__)
+        print(f"question-bank import failed ({type(exc).__name__}): {exc}", file=sys.stderr)
+        return 2
+    append_event(root, "import_finish", "ok", counts=summary.as_dict())
+    if args.json:
+        print(json.dumps(summary.as_dict(), ensure_ascii=False, sort_keys=True))
+    else:
+        print(f"ingested: {summary.ingested}, skipped: {summary.skipped}, quarantined: {summary.quarantined}")
+    return 0
+
+
 def _cmd_stats(root: Path, *, user: str | None, as_json: bool) -> int:
     answer_log = answers.answers_path(root, user)
     stats = _calculate_stats(answer_log)
@@ -165,6 +294,27 @@ def main(argv: list[str] | None = None) -> int:
     ingest.add_argument("--dry-run", action="store_true", help="validate without writing questions or quarantine")
     ingest.add_argument("--json", action="store_true", help="print the summary as JSON")
 
+    import_cmd = commands.add_parser(
+        "import",
+        help="import questions directly from CSV, JSON/JSONL, or PDF (with --profile)",
+    )
+    import_cmd.add_argument("target", nargs="+", help="file path (or 'pdf <file>')")
+    import_cmd.add_argument("--profile", help="TOML import profile name (e.g. fgv, poscomp) or path")
+    import_cmd.add_argument("--exam", help="exam slug override")
+    import_cmd.add_argument("--year", type=int, help="exam year (defaults to current year)")
+    import_cmd.add_argument("--answer-key", type=Path, help="answer-key PDF path for board profiles")
+    import_cmd.add_argument("--agency", help="hiring agency for board profiles")
+    import_cmd.add_argument("--role", help="role metadata for board profiles")
+    import_cmd.add_argument("--booklet", help="booklet label for board profiles")
+    import_cmd.add_argument("--answer-key-kind", choices=("final", "preliminary"), help="answer-key status")
+    import_cmd.add_argument("--booklet-url", help="official exam booklet URL")
+    import_cmd.add_argument("--booklet-sha256", help="exam booklet SHA-256 digest")
+    import_cmd.add_argument("--answer-key-url", help="official answer-key URL")
+    import_cmd.add_argument("--answer-key-sha256", help="answer-key SHA-256 digest")
+    import_cmd.add_argument("--rejects", type=Path, help="write rejected candidates to this JSONL path")
+    import_cmd.add_argument("--dry-run", action="store_true", help="validate without writing questions or rejects")
+    import_cmd.add_argument("--json", action="store_true", help="print the summary as JSON")
+
     validate_cmd = commands.add_parser("validate", help="validate all question JSON records in the bank")
     validate_cmd.add_argument("--json", action="store_true", help="print the validation report as JSON")
 
@@ -187,6 +337,8 @@ def main(argv: list[str] | None = None) -> int:
     root = resolve_bank_root()
     if args.command == "init":
         return _cmd_init(args.path or root, with_example=args.with_example)
+    if args.command == "import":
+        return _cmd_import(root, args)
     if args.command == "validate":
         return _cmd_validate(root, as_json=args.json)
     if args.command == "search":

@@ -67,5 +67,8 @@ def test_claude_plugin_manifests_are_valid_json():
 
     assert plugin["name"] == "question-bank"
     assert plugin["mcpServers"] == "./.mcp.json"
+    assert plugin["skills"] == "./skills"
+    assert (claude_dir / "skills" / "question-practice" / "SKILL.md").is_file()
+    assert (claude_dir / "skills" / "exercise-list" / "SKILL.md").is_file()
     assert "question-bank" in mcp_cfg["mcpServers"]
     assert "question-bank-mcp" in mcp_cfg["mcpServers"]["question-bank"]["args"]
