@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from question_bank.cli import main
 
@@ -14,7 +15,9 @@ def test_init_ingest_validate_search_stats_end_to_end(tmp_path, monkeypatch, cap
 
     assert main(["init", "--with-example"]) == 0
     assert (bank / "questions").is_dir()
-    assert (bank / "docs" / "tags.md").is_file()
+    tags_path = bank / "docs" / "tags.md"
+    repo_tags = Path(__file__).resolve().parents[1] / "docs" / "tags.md"
+    assert tags_path.read_bytes() == repo_tags.read_bytes()
     assert (bank / "reports" / "example.csv").is_file()
     assert (bank / "reports" / "sources.json").is_file()
 
@@ -24,6 +27,16 @@ def test_init_ingest_validate_search_stats_end_to_end(tmp_path, monkeypatch, cap
     assert (bank / "reports" / "example.csv").read_text(encoding="utf-8") == sentinel
     capsys.readouterr()
 
+    # Banks without a local registry use the bundled default.
+    tags_path.unlink()
+    assert main(["ingest", "--dry-run", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"ingested": 1, "skipped": 0, "quarantined": 0}
+
+    # A bank-local registry can define a tag absent from the default.
+    tags_path.write_text("## Registry\n\nlocal-hash | Local Hash Functions | topic\n", encoding="utf-8")
+    (bank / "reports" / "example.csv").write_text(
+        sentinel.replace("tabelas-hash", "local-hash"), encoding="utf-8"
+    )
     assert main(["ingest", "--json"]) == 0
     ingest_summary = json.loads(capsys.readouterr().out)
     assert ingest_summary == {"ingested": 1, "skipped": 0, "quarantined": 0}
@@ -45,7 +58,9 @@ def test_init_ingest_validate_search_stats_end_to_end(tmp_path, monkeypatch, cap
     assert stats["overall"]["total"] == 0
 
     assert main(["doctor"]) == 0
-    assert "Summary: OK" in capsys.readouterr().out
+    doctor_report = capsys.readouterr().out
+    assert "loaded; 1 tags" in doctor_report
+    assert "Summary: OK" in doctor_report
 
 
 def test_validate_returns_nonzero_on_invalid_question(tmp_path, monkeypatch, capsys):

@@ -28,6 +28,10 @@ any directory to relocate it. The ingestion guide (`ingestion.md`)
 explains the layout: `questions/` for records, `reports/` for the
 manifest, quarantine, and the event journal.
 
+`qb init` copies the default tag registry to the bank's `docs/tags.md`.
+Ingest, validation, doctor, and MCP topic listing use that file when it
+exists and use the packaged registry otherwise.
+
 ## First run
 
 ```bash

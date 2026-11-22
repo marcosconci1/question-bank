@@ -31,6 +31,9 @@ qb = "question_bank.cli:main"
 where = ["src"]
 namespaces = true
 
+[tool.setuptools.package-data]
+question_bank = ["tags.md"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test-*.py", "test_*.py"]
