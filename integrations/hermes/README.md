@@ -33,12 +33,14 @@ module CLI, isolating the Hermes and question-bank Python environments.
 
 ## Tool contract
 
-The plugin exposes exactly three read-only bank tools:
+The plugin exposes four read-only bank tools:
 
 - `search-questions` calls `question-search query` and returns ranked previews
   without answer keys or rubrics.
 - `get-question` reads one source JSON object. With no `view`, it preserves the
   legacy response, including answer/rubric and repository-relative image paths.
+- `list-topics` lists registered tags from `docs/tags.md` with active question
+  counts and per-year `by_year` frequency.
 - `get-stats` calls `question-search status` and aggregates the optional
   `data/users/<user>/answers.jsonl` log (configured via `QUESTION_BANK_USER`, default: `marcos`) without modifying it.
 

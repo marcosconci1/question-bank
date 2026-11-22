@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "question-bank": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/marcosconci1/question-bank",
+        "question-bank-mcp"
+      ]
+    }
+  }
+}
