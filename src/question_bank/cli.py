@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sys
 from pathlib import Path
 
@@ -14,9 +13,8 @@ from question_bank.ingest.pipeline import run_ingest
 from question_bank.journal import append_event
 from question_bank.mcp_server import _calculate_stats, create_server
 from question_bank.paths import resolve_bank_root
+from question_bank.tag_registry import bundled_tags, resolve_tags
 from question_bank.validate import validate_bank
-
-_BUNDLED_TAGS = Path(__file__).resolve().parents[2] / "docs" / "tags.md"
 
 _EXAMPLE_CSV = (
     "id,number,stem,A,B,C,D,E,answer,topic\n"
@@ -45,11 +43,6 @@ _EXAMPLE_MANIFEST = [
 ]
 
 
-def _resolve_tags_path(root: Path) -> Path:
-    bank_tags = root / "docs" / "tags.md"
-    return bank_tags if bank_tags.is_file() else _BUNDLED_TAGS
-
-
 def _cmd_init(target: Path, *, with_example: bool) -> int:
     root = target.expanduser().resolve()
     created: list[str] = []
@@ -60,8 +53,8 @@ def _cmd_init(target: Path, *, with_example: bool) -> int:
             created.append(f"{subdir}/")
 
     tags_dest = root / "docs" / "tags.md"
-    if not tags_dest.exists() and _BUNDLED_TAGS.is_file():
-        shutil.copy2(_BUNDLED_TAGS, tags_dest)
+    if not tags_dest.exists():
+        tags_dest.write_bytes(bundled_tags().read_bytes())
         created.append("docs/tags.md")
 
     if with_example:
@@ -94,7 +87,7 @@ def _cmd_validate(root: Path, *, as_json: bool) -> int:
             print(msg, file=sys.stderr)
         return 1
 
-    tags_path = _resolve_tags_path(root)
+    tags_path = resolve_tags(root)
     result = validate_bank(questions_dir, tags_path)
     error_entries = [
         {
@@ -218,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
 
     append_event(root, "ingest_start", "started", source_id=args.source or "all", dry_run=args.dry_run)
     try:
-        summary = run_ingest(args.manifest, args.source, dry_run=args.dry_run)
+        summary = run_ingest(args.manifest, args.source, dry_run=args.dry_run, bank_root=root)
     except Exception as exc:
         append_event(root, "ingest_finish", "failed", error_type=type(exc).__name__)
         print(f"question-bank ingest failed ({type(exc).__name__})", file=sys.stderr)

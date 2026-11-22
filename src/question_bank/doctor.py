@@ -18,6 +18,7 @@ from question_bank.ingest.csv_adapter import CsvAdapter
 from question_bank.ingest.llm_adapter import DEFAULT_EXTRACT_MODEL, PdfLlmAdapter
 from question_bank.ingest.manifest import load_manifest
 from question_bank.paths import resolve_bank_root
+from question_bank.tag_registry import resolve_tags
 from question_bank.validate import load_registered_tags
 
 from .journal import append_event, journal_path, read_events
@@ -76,9 +77,8 @@ def run_doctor(bank_root: str | os.PathLike[str] | None = None) -> tuple[list[di
         manifest_result = _result("sources manifest", "WARN", "not present")
     results.append(manifest_result)
 
-    tags_path = Path(__file__).resolve().parents[2] / "docs" / "tags.md"
     try:
-        tags = load_registered_tags(tags_path)
+        tags = load_registered_tags(resolve_tags(root))
         tags_ok = bool(tags)
     except (OSError, UnicodeError):
         tags = set()

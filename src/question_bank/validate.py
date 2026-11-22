@@ -12,6 +12,7 @@ import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Any
 
@@ -98,7 +99,7 @@ class BankValidation:
         return not self.errors
 
 
-def load_registered_tags(tags_path: Path) -> set[str]:
+def load_registered_tags(tags_path: Traversable) -> set[str]:
     """Read tag slugs from the Registry section of ``docs/tags.md`` only."""
 
     registered: set[str] = set()
@@ -453,7 +454,7 @@ def is_verified_concurso_record(question: dict[str, Any], path: Path) -> bool:
     )
 
 
-def validate_bank(questions_dir: Path, tags_path: Path) -> BankValidation:
+def validate_bank(questions_dir: Path, tags_path: Traversable) -> BankValidation:
     """Validate all JSON questions, including duplicate identifiers across files."""
 
     registered_tags = load_registered_tags(tags_path)

@@ -16,6 +16,7 @@ from mcp.server.mcpserver import MCPServer
 from question_bank import answers
 from question_bank.corrections import apply_corrections, load_corrections
 from question_bank.paths import resolve_bank_root
+from question_bank.tag_registry import resolve_tags
 from question_search import config, embed, errors, flatten, lexical, store
 
 
@@ -238,17 +239,7 @@ def _presentation_question(root: Path, question: dict[str, Any], view: str) -> d
 
 def _load_registry(root: Path) -> list[tuple[str, str, str]]:
     """Return (slug, display name, level) rows from the bank or bundled docs/tags.md."""
-    candidates = (
-        root / "docs" / "tags.md",
-        Path(__file__).resolve().parents[2] / "docs" / "tags.md",
-    )
-    text = ""
-    for candidate in candidates:
-        if candidate.is_file():
-            text = candidate.read_text(encoding="utf-8")
-            break
-    if not text:
-        return []
+    text = resolve_tags(root).read_text(encoding="utf-8")
 
     rows: list[tuple[str, str, str]] = []
     in_registry = False

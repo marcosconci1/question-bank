@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from question_bank.paths import resolve_bank_root
+from question_bank.tag_registry import resolve_tags
 from question_bank.validate import load_registered_tags, validate_question
 
 from .csv_adapter import CsvAdapter
@@ -43,7 +44,7 @@ def run_ingest(
     manifest_file = Path(manifest_path).expanduser().resolve() if manifest_path else root / "reports" / "sources.json"
     questions_dir = root / "questions"
     quarantine_path = root / "reports" / "ingest-quarantine.jsonl"
-    registry_path = Path(tags_path) if tags_path else Path(__file__).resolve().parents[3] / "docs" / "tags.md"
+    registry_path = Path(tags_path) if tags_path is not None else resolve_tags(root)
     registered_tags = load_registered_tags(registry_path)
     sources = load_manifest(manifest_file)
     if source_id is not None:
