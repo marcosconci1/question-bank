@@ -148,7 +148,7 @@ def test_question_endpoint_hides_answer(web_bank):
     assert res_exam.status_code == 200
     assert [q["id"] for q in res_exam.json()] == [q1["id"]]
 
-    # Single question hides answer and rubric
+    # Multiple-choice questions hide the answer and rubric
     res_q1 = client.get(f"/api/questions/{q1['id']}")
     assert res_q1.status_code == 200
     safe_q1 = res_q1.json()
@@ -160,7 +160,7 @@ def test_question_endpoint_hides_answer(web_bank):
     assert res_q3.status_code == 200
     safe_q3 = res_q3.json()
     assert "answer" not in safe_q3
-    assert "rubric" not in safe_q3
+    assert safe_q3["rubric"] == q3["rubric"]
 
     # Traversal or nonexistent
     assert client.get("/api/questions/../nonexistent").status_code == 404

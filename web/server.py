@@ -213,7 +213,8 @@ def create_app(bank_root: Path | None = None) -> Starlette:
             return JSONResponse({"error": "question_not_found"}, status_code=404)
         safe_copy = dict(question)
         safe_copy.pop("answer", None)
-        safe_copy.pop("rubric", None)
+        if question.get("type") != "discursive":
+            safe_copy.pop("rubric", None)
         return JSONResponse(safe_copy)
 
     async def create_session(request: Request) -> Response:

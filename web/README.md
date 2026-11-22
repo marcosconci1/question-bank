@@ -36,7 +36,7 @@ All API endpoints return JSON payloads.
 | `GET` | `/api/users` | List existing users with folders in `data/users/` |
 | `POST` | `/api/users` | Create a new user folder (`{"name": "username"}`) |
 | `GET` | `/api/questions` | Query questions index with optional `exam`, `year`, `tag`, and `status` (`active` or `all`) filters |
-| `GET` | `/api/questions/{id}` | Read question content with `answer` and `rubric` redacted |
+| `GET` | `/api/questions/{id}` | Read question content with `answer` redacted. Includes `rubric` for discursive questions. |
 | `POST` | `/api/u/{user}/sessions` | Create a practice session (`count`, `exam`, `tag`, `only_unseen`, `include_suspended`, `weakest`) |
 | `POST` | `/api/u/{user}/answer` | Submit attempt (`question_id`, `session_id`, `given_answer`, optional `time_spent`, `self_grade`); server grades and records attempt |
 | `GET` | `/api/u/{user}/session/{session_id}` | Retrieve recorded attempts for a session |
