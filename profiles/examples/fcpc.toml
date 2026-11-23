@@ -1,0 +1,8 @@
+name = "fcpc"
+kind = "pdf-board"
+exam = "fcpc"
+description = "FCPC public-sector IT exam booklet and answer key."
+
+[options]
+board = "fcpc"
+answer_key_kind = "final"

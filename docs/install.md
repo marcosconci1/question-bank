@@ -6,15 +6,33 @@ the engine in a normal Python package.
 
 ## Install
 
+From a local checkout:
+
 ```bash
 git clone https://github.com/marcosconci1/question-bank
 cd question-bank
-uv sync --locked
+uv sync --locked              # core: CSV/JSON import, lexical search, MCP
+uv sync --locked --all-extras # include PDF import, Qdrant semantic search, and web UI
 ```
+
+Or install the CLI globally as a `uv` tool:
+
+```bash
+uv tool install git+https://github.com/marcosconci1/question-bank
+# with optional extras:
+uv tool install "question-search[all] @ git+https://github.com/marcosconci1/question-bank"
+```
+
+Optional extras in `pyproject.toml`:
+
+- `import` (`pymupdf`): PDF ingestion (`pdf-board` and `pdf-llm` adapters).
+- `semantic` (`qdrant-client`): Qdrant vector indexing and semantic search.
+- `web` (`starlette`, `uvicorn`): optional local web UI under `web/`.
+- `all`: installs all optional extras together.
 
 This installs the project commands into the environment:
 
-- `qb` (alias for `question-bank`): `init`, `ingest`, `validate`, `search`, `stats`, `mcp`, `doctor`, `diagnose`
+- `qb` (alias for `question-bank`): `init`, `import`, `ingest`, `validate`, `search`, `stats`, `mcp`, `doctor`, `diagnose`
 - `question-search`: retrieval (`index`, `query`, `status`)
 - `question-bank-mcp`: read-only stdio MCP server (`search-questions`, `get-question`, `list-topics`, `get-stats`)
 

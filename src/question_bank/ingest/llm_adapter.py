@@ -13,11 +13,20 @@ from collections.abc import Iterable
 from typing import Any
 
 import httpx
-import pymupdf
 
 from question_search import config as search_config
 
 from .manifest import Source
+
+
+def _require_pymupdf():
+    try:
+        import pymupdf
+    except ImportError as exc:
+        raise ImportError(
+            "PDF LLM ingestion requires the optional 'import' extra: uv sync --extra import"
+        ) from exc
+    return pymupdf
 
 DEFAULT_EXTRACT_MODEL = "openai/gpt-4o-mini"
 OPENROUTER_CHAT_URL = search_config.EMBEDDING_BASE_URL.rstrip("/") + "/chat/completions"
@@ -144,7 +153,7 @@ class PdfLlmAdapter:
         if not isinstance(batch_pages, int) or isinstance(batch_pages, bool) or batch_pages < 1:
             raise ValueError("batch_pages must be a positive integer")
         self.page_accounting = []
-        with pymupdf.open(str(source.path)) as document:
+        with _require_pymupdf().open(str(source.path)) as document:
             pages = [(index + 1, page.get_text("text")) for index, page in enumerate(document)]
 
         for start in range(0, len(pages), batch_pages):

@@ -17,7 +17,15 @@ import re
 import unicodedata
 from typing import Any
 
-import pymupdf
+
+def _require_pymupdf():
+    try:
+        import pymupdf
+    except ImportError as exc:
+        raise ImportError(
+            "PDF board ingestion requires the optional 'import' extra: uv sync --extra import"
+        ) from exc
+    return pymupdf
 
 ANNULLED = "ANNULLED"
 VALID_BANCAS = ("fgv", "iades", "cesgranrio", "fcpc")
@@ -646,7 +654,7 @@ def extract_questions_from_pdf(
     banca: str,
 ) -> list[ParsedCandidate]:
     """Open a PDF via PyMuPDF and extract all candidate questions."""
-    doc = pymupdf.open(str(pdf_path))
+    doc = _require_pymupdf().open(str(pdf_path))
     try:
         pages = [page.get_text("text") for page in doc]
     finally:
@@ -884,7 +892,7 @@ def parse_gabarito_text(pages: list[str], banca: str) -> dict[str, dict[int, str
 
 def parse_gabarito_pdf(pdf_path: str | Path, banca: str) -> dict[str, dict[int, str]]:
     """Open an answer key PDF via PyMuPDF and parse all role/caderno answer maps."""
-    doc = pymupdf.open(str(pdf_path))
+    doc = _require_pymupdf().open(str(pdf_path))
     try:
         pages = [page.get_text("text") for page in doc]
     finally:

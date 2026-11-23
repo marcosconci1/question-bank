@@ -1,0 +1,8 @@
+name = "fgv"
+kind = "pdf-board"
+exam = "fgv"
+description = "FGV (Fundação Getulio Vargas) public-sector IT exam booklet and answer key."
+
+[options]
+board = "fgv"
+answer_key_kind = "final"

@@ -1,0 +1,9 @@
+name = "enade"
+kind = "pdf-llm"
+exam = "enade"
+description = "ENADE Computer Science text-layer PDF booklet via bounded LLM extraction."
+
+[options]
+batch_pages = 4
+component = "specific"
+course = "computer-science"

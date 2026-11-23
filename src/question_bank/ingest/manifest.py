@@ -8,6 +8,34 @@ from pathlib import Path
 from typing import Any
 
 
+BOARD_FORMATS = frozenset({"fgv", "iades", "cesgranrio", "fcpc"})
+_BOARD_OPTION_ALIASES = {
+    "banca": "board",
+    "organ": "agency",
+    "caderno": "booklet",
+    "prova_url": "booklet_url",
+    "prova_sha256": "booklet_sha256",
+    "gabarito_path": "answer_key_path",
+    "gabarito_kind": "answer_key_kind",
+    "gabarito_url": "answer_key_url",
+    "gabarito_sha256": "answer_key_sha256",
+    "gabarito_source_kind": "answer_key_source_kind",
+}
+
+
+def normalize_board_options(options: dict[str, Any]) -> dict[str, Any]:
+    """Accept legacy board options, giving the English keys precedence."""
+    normalized = options.copy()
+    for legacy, current in _BOARD_OPTION_ALIASES.items():
+        if legacy in normalized:
+            normalized.setdefault(current, normalized.pop(legacy))
+    kind = normalized.get("answer_key_kind")
+    if isinstance(kind, str):
+        kind = kind.strip().lower()
+        normalized["answer_key_kind"] = {"definitivo": "final", "preliminar": "preliminary"}.get(kind, kind)
+    return normalized
+
+
 @dataclass(frozen=True)
 class Source:
     """One source declaration; ``options`` holds adapter-specific settings."""
@@ -57,7 +85,7 @@ def load_manifest(path: Path) -> list[Source]:
         if source_id in seen:
             raise ValueError(f"duplicate source id: {source_id}")
         seen.add(source_id)
-        if kind not in {"csv", "pdf-board", "pdf-llm"}:
+        if kind not in {"csv", "json", "pdf-board", "pdf-llm"}:
             raise ValueError(f"unknown source kind for {source_id}: {kind!r}")
         if not isinstance(source_path, str) or not source_path.strip():
             raise ValueError(f"source {source_id} requires a non-empty path")
@@ -69,17 +97,18 @@ def load_manifest(path: Path) -> list[Source]:
         if not isinstance(options, dict):
             raise ValueError(f"source {source_id} options must be an object")
         if kind == "pdf-board":
+            options = normalize_board_options(options)
             missing = [
                 field
-                for field in ("banca", "organ", "role", "caderno")
+                for field in ("board", "agency", "role", "booklet")
                 if not isinstance(options.get(field), str) or not options[field].strip()
             ]
             if missing:
                 raise ValueError(
                     f"source {source_id} requires board metadata: {', '.join(missing)}"
                 )
-            if options["banca"].strip().lower() not in {"fgv", "iades", "cesgranrio", "fcpc"}:
-                raise ValueError(f"source {source_id} has unsupported banca: {options['banca']!r}")
+            if options["board"].strip().lower() not in BOARD_FORMATS:
+                raise ValueError(f"source {source_id} has unsupported board: {options['board']!r}")
         resolved_path = (manifest_path.parent / source_path).resolve()
         sources.append(Source(source_id, kind, resolved_path, exam.strip().lower(), year, options))
     return sources

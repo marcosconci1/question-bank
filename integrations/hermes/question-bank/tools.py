@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 from typing import Any
 
@@ -56,7 +57,13 @@ def _bank_root() -> Path:
 
 
 def _cli_binary() -> Path:
-    return Path(os.environ.get("QUESTION_SEARCH_BIN", str(ROOT / "question-search.sh")))
+    configured = os.environ.get("QUESTION_SEARCH_BIN")
+    if configured:
+        return Path(configured)
+    installed = shutil.which("question-search")
+    if installed:
+        return Path(installed)
+    return ROOT / "question-search.sh"
 
 
 def _run_cli(command: str, arguments: list[str]) -> dict[str, Any]:
