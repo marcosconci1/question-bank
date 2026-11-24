@@ -13,7 +13,7 @@ code path exists from an adapter to the questions directory.
 
 ```mermaid
 graph LR
-  M[sources.json] --> K{kind}
+  M["reports/sources.json"] --> K{kind}
   K -->|csv| C[CSV adapter]
   K -->|pdf-board| B[Board adapter]
   K -->|pdf-llm| L[LLM adapter]
@@ -91,16 +91,18 @@ silent drops impossible by construction.
 ## What lands on disk
 
 The bank root is a plain directory of JSON and logs, relocatable with
-`QUESTION_BANK_ROOT`:
+`QUESTION_BANK_ROOT` (with the search index hash ledger at
+`QUESTION_BANK_STATE/ledger.json`, defaulting to
+`~/.local/share/question-bank/ledger.json`):
 
 ```mermaid
 graph TD
-  B[bank root] --> Q[questions/ .json records with source, pages, adapter]
-  B --> R[reports/]
-  R --> MA[manifest.json declared sources]
-  R --> QA[ingest-quarantine.jsonl rejected candidates + reasons]
-  R --> EV[events.jsonl local event journal]
-  B --> I[index/ search index ledger and vector store]
+  B[bank root] --> Q["questions/ .json records with source, pages, adapter"]
+  B --> R["reports/"]
+  R --> MA["reports/sources.json declared sources"]
+  R --> QA["reports/ingest-quarantine.jsonl rejected candidates + reasons"]
+  R --> EV["reports/events.log.jsonl local event journal"]
+  S[QUESTION_BANK_STATE] --> L["ledger.json search index content-hash ledger"]
 ```
 
 **Idempotence is built in.** Running the same ingest twice produces

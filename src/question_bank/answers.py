@@ -14,7 +14,7 @@ import uuid
 from question_bank.corrections import apply_corrections
 
 
-DEFAULT_USER = "marcos"
+DEFAULT_USER = "default"
 _USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _REQUIRED = {"question_id", "session_id", "given_answer", "is_correct"}
 _OPTIONAL = {"time_spent"}

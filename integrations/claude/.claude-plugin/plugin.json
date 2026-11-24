@@ -1,6 +1,6 @@
 {
   "name": "question-bank",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local exam question bank with answer-safe practice views, topic frequency, and attempt stats over MCP.",
   "author": {
     "name": "Marcos Conci"

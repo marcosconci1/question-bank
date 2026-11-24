@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
+import threading
 
 MODULE_ROOT = Path(__file__).resolve().parents[1]
 if str(MODULE_ROOT) not in sys.path:
@@ -14,7 +19,424 @@ import pytest
 from starlette.testclient import TestClient
 
 from question_bank import answers
+from question_bank.tag_registry import bundled_tags
 from web.server import create_app
+
+
+APP_JS_PATH = MODULE_ROOT / "web" / "static" / "app.js"
+
+_NODE_HARNESS = r"""
+const fs = require('node:fs');
+const vm = require('node:vm');
+
+const cfg = JSON.parse(process.argv[1]);
+const appCode = fs.readFileSync(cfg.appJsPath, 'utf8');
+
+const storage = new Map(Object.entries(cfg.initialStorage || {}));
+const localStorage = {
+  getItem(k) { return storage.has(String(k)) ? storage.get(String(k)) : null; },
+  setItem(k, v) { storage.set(String(k), String(v)); },
+  removeItem(k) { storage.delete(String(k)); },
+  dump() { return Object.fromEntries(storage.entries()); },
+};
+
+const byId = new Map();
+const alerts = [];
+
+class ClassList {
+  constructor(el) { this.el = el; this.set = new Set(); }
+  add(...names) { names.forEach(n => n && this.set.add(n)); }
+  remove(...names) { names.forEach(n => this.set.delete(n)); }
+  contains(n) { return this.set.has(n); }
+}
+
+function registerTree(el) {
+  if (el && el.id) byId.set(el.id, el);
+  if (el && el.children) el.children.forEach(registerTree);
+}
+
+function decodeHtml(str) {
+  return String(str)
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function parseInnerHtml(html, ownerDoc) {
+  const children = [];
+  const clean = String(html);
+  const tagRe = /<(select|input|h2|h3|p|div|a|button|span)\b([^>]*)>([\s\S]*?)<\/\1>|<(input)\b([^>]*)\/?>/gi;
+  let match;
+  while ((match = tagRe.exec(clean)) !== null) {
+    const tag = (match[1] || match[4]).toUpperCase();
+    const attrs = match[2] || match[5] || '';
+    const inner = match[3] || '';
+    const el = ownerDoc.createElement(tag);
+    const idM = attrs.match(/\bid="([^"]*)"/i);
+    if (idM) el.id = decodeHtml(idM[1]);
+    const valM = attrs.match(/\bvalue="([^"]*)"/i);
+    if (valM) el._value = decodeHtml(valM[1]);
+    const typeM = attrs.match(/\btype="([^"]*)"/i);
+    if (typeM) el.type = decodeHtml(typeM[1]);
+    if (/\bchecked\b/i.test(attrs)) el.checked = true;
+    if (tag === 'SELECT') {
+      const optRe = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
+      let om;
+      while ((om = optRe.exec(inner)) !== null) {
+        const opt = ownerDoc.createElement('OPTION');
+        const ov = om[1].match(/\bvalue="([^"]*)"/i);
+        opt.value = ov ? decodeHtml(ov[1]) : decodeHtml(om[2].replace(/<[^>]+>/g, ''));
+        opt.textContent = decodeHtml(om[2].replace(/<[^>]+>/g, ''));
+        if (/\bselected\b/i.test(om[1])) opt.selected = true;
+        el.appendChild(opt);
+      }
+    } else if (inner) {
+      el.innerHTML = inner;
+    }
+    children.push(el);
+  }
+  return children;
+}
+
+class Element {
+  constructor(tagName, ownerDoc) {
+    this.tagName = String(tagName).toUpperCase();
+    this.ownerDocument = ownerDoc;
+    this._id = '';
+    this._value = '';
+    this._innerHTML = '';
+    this._textContent = '';
+    this.children = [];
+    this.attributes = {};
+    this.style = {};
+    this.listeners = {};
+    this.classList = new ClassList(this);
+    this.selected = false;
+    this.checked = false;
+    this.disabled = false;
+  }
+  get id() { return this._id; }
+  set id(v) {
+    this._id = String(v || '');
+    if (this._id) byId.set(this._id, this);
+  }
+  set className(v) {
+    this._className = String(v || '');
+    this.classList.set = new Set(this._className.split(/\s+/).filter(Boolean));
+  }
+  get className() { return Array.from(this.classList.set).join(' '); }
+  set innerHTML(v) {
+    this._innerHTML = String(v ?? '');
+    this._textContent = '';
+    this.children = this._innerHTML ? parseInnerHtml(this._innerHTML, this.ownerDocument) : [];
+    registerTree(this);
+  }
+  get innerHTML() { return this._innerHTML; }
+  set textContent(v) {
+    this._textContent = String(v ?? '');
+    this._innerHTML = '';
+    this.children = [];
+  }
+  get textContent() {
+    if (this.children.length) {
+      return this.children.map(c => c.textContent).filter(Boolean).join(' ');
+    }
+    if (this._innerHTML) {
+      return decodeHtml(this._innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim());
+    }
+    return this._textContent;
+  }
+  get value() {
+    if (this.tagName === 'SELECT') {
+      if (this._explicitValue !== undefined && this.children.some(c => c.value === this._explicitValue)) {
+        return this._explicitValue;
+      }
+      const sel = this.children.find(c => c.selected);
+      if (sel) return sel.value;
+      return this.children[0] ? this.children[0].value : (this._explicitValue || '');
+    }
+    return this._value;
+  }
+  set value(v) {
+    const sv = String(v ?? '');
+    if (this.tagName === 'SELECT') {
+      this._explicitValue = sv;
+      this.children.forEach(c => { c.selected = (c.value === sv); });
+    } else {
+      this._value = sv;
+    }
+  }
+  appendChild(child) {
+    if (child && typeof child === 'object') {
+      this.children.push(child);
+      registerTree(child);
+    }
+    return child;
+  }
+  setAttribute(k, v) {
+    this.attributes[k] = String(v);
+    if (k === 'id') this.id = v;
+  }
+  getAttribute(k) { return this.attributes[k] ?? null; }
+  addEventListener(type, fn) {
+    (this.listeners[type] ||= []).push(fn);
+  }
+  async dispatchEvent(type, eventObj = {}) {
+    const fns = this.listeners[type] || [];
+    for (const fn of fns) {
+      await fn({ target: this, preventDefault() {}, ...eventObj });
+    }
+  }
+  click() { return this.dispatchEvent('click'); }
+  focus() {}
+  closest() { return null; }
+}
+
+const document = {
+  documentElement: null,
+  createElement(tag) { return new Element(tag, document); },
+  createTextNode(text) {
+    const span = new Element('TEXT', document);
+    span.textContent = text;
+    return span;
+  },
+  getElementById(id) { return byId.get(id) || null; },
+  querySelectorAll(sel) {
+    if (sel === '.nav-links a') return navLinks;
+    return [];
+  },
+};
+document.documentElement = document.createElement('html');
+
+const appEl = document.createElement('main');
+appEl.id = 'app';
+const userSelect = document.createElement('select');
+userSelect.id = 'user-select';
+const themeToggle = document.createElement('button');
+themeToggle.id = 'theme-toggle';
+const navLinks = ['nav-practice', 'nav-search', 'nav-topics', 'nav-stats'].map(id => {
+  const a = document.createElement('a');
+  a.id = id;
+  return a;
+});
+
+let inFlight = 0;
+async function wrappedFetch(input, init) {
+  inFlight += 1;
+  try {
+    const target = new URL(String(input), cfg.baseUrl).toString();
+    return await fetch(target, init);
+  } finally {
+    inFlight -= 1;
+  }
+}
+
+const winListeners = {};
+let currentHash = cfg.initialHash || '#/';
+const windowObj = {
+  location: {
+    get hash() { return currentHash; },
+    set hash(v) {
+      const next = String(v || '');
+      if (next !== currentHash) {
+        currentHash = next;
+        queueMicrotask(() => {
+          (winListeners['hashchange'] || []).forEach(fn => fn({ target: windowObj }));
+        });
+      }
+    },
+  },
+  addEventListener(type, fn) { (winListeners[type] ||= []).push(fn); },
+  prompt: () => cfg.promptValue ?? null,
+  alert: (msg) => alerts.push(String(msg)),
+  localStorage,
+  document,
+  fetch: wrappedFetch,
+  URLSearchParams,
+  setTimeout,
+  clearTimeout,
+};
+
+async function settle() {
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 5));
+    if (inFlight === 0) {
+      await new Promise(r => setTimeout(r, 5));
+      if (inFlight === 0) break;
+    }
+  }
+}
+
+function findButtonByText(root, label) {
+  if (root.tagName === 'BUTTON' && root.textContent.includes(label)) return root;
+  for (const ch of root.children || []) {
+    const hit = findButtonByText(ch, label);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+(async () => {
+  const ctx = vm.createContext({
+    window: windowObj,
+    document,
+    localStorage,
+    fetch: wrappedFetch,
+    URLSearchParams,
+    alert: windowObj.alert,
+    prompt: windowObj.prompt,
+    setTimeout,
+    clearTimeout,
+    console,
+    Date,
+    Math,
+    JSON,
+    Array,
+    Object,
+    Set,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Error,
+    Promise,
+    encodeURIComponent,
+  });
+  vm.runInContext(appCode, ctx, { filename: 'app.js' });
+  await settle();
+
+  if (cfg.action === 'start_practice') {
+    const startBtn = findButtonByText(appEl, 'Start practice');
+    if (startBtn) {
+      await startBtn.click();
+      await settle();
+    }
+  } else if (cfg.navigateHash) {
+    windowObj.location.hash = cfg.navigateHash;
+    await settle();
+  }
+
+  const out = {
+    localStorage: localStorage.dump(),
+    selectedUser: userSelect.value,
+    userOptions: userSelect.children.map(o => ({
+      value: o.value,
+      text: o.textContent,
+      selected: Boolean(o.selected),
+    })),
+    hash: windowObj.location.hash,
+    appText: appEl.textContent,
+    alerts,
+  };
+  process.stdout.write(JSON.stringify(out));
+})().catch(err => {
+  console.error(err);
+  process.exit(1);
+});
+"""
+
+
+@contextmanager
+def _serve_test_app(app, *, fail_get_users: bool = False, fail_post_users: bool = False):
+    client = TestClient(app)
+    requests_log: list[dict[str, object]] = []
+    lock = threading.Lock()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):  # noqa: A002
+            return
+
+        def _handle(self, method: str):
+            length = int(self.headers.get("content-length") or 0)
+            raw_body = self.rfile.read(length) if length > 0 else b""
+            if fail_get_users and method == "GET" and self.path == "/api/users":
+                status = 500
+                payload = json.dumps({"error": "server_error", "message": "users unavailable"}).encode("utf-8")
+                with lock:
+                    requests_log.append({"method": method, "path": self.path, "status": status})
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            if fail_post_users and method == "POST" and self.path == "/api/users":
+                status = 500
+                payload = json.dumps({"error": "create_failed", "message": "disk read-only"}).encode("utf-8")
+                with lock:
+                    requests_log.append({"method": method, "path": self.path, "status": status})
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+
+            headers = {}
+            if "content-type" in self.headers:
+                headers["content-type"] = self.headers["content-type"]
+            with lock:
+                res = client.request(method, self.path, content=raw_body, headers=headers)
+                requests_log.append({"method": method, "path": self.path, "status": res.status_code})
+            body_bytes = res.content
+            self.send_response(res.status_code)
+            self.send_header("Content-Type", res.headers.get("content-type", "application/json"))
+            self.send_header("Content-Length", str(len(body_bytes)))
+            self.end_headers()
+            self.wfile.write(body_bytes)
+
+        def do_GET(self):
+            self._handle("GET")
+
+        def do_POST(self):
+            self._handle("POST")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        yield f"http://127.0.0.1:{port}", requests_log
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def _run_app_js(
+    app,
+    *,
+    initial_storage: dict[str, str] | None = None,
+    initial_hash: str = "#/",
+    action: str | None = None,
+    navigate_hash: str | None = None,
+    fail_get_users: bool = False,
+    fail_post_users: bool = False,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    node = shutil.which("node")
+    assert node is not None, "node is required to exercise web/static/app.js"
+    with _serve_test_app(
+        app, fail_get_users=fail_get_users, fail_post_users=fail_post_users
+    ) as (base_url, requests_log):
+        cfg = {
+            "appJsPath": str(APP_JS_PATH),
+            "baseUrl": base_url,
+            "initialStorage": initial_storage or {},
+            "initialHash": initial_hash,
+            "action": action,
+            "navigateHash": navigate_hash,
+        }
+        proc = subprocess.run(
+            [node, "-e", _NODE_HARNESS, json.dumps(cfg)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        assert proc.returncode == 0, proc.stderr
+        return json.loads(proc.stdout), requests_log
 
 
 @pytest.fixture
@@ -86,15 +508,32 @@ def web_bank(tmp_path):
     return tmp_path, (q1, q2, q3)
 
 
-def test_users_endpoints_and_traversal_rejection(web_bank):
+def test_users_endpoints_and_traversal_rejection(web_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
     root, _ = web_bank
     app = create_app(root)
+    assert not (root / "data").exists()
     client = TestClient(app)
 
-    # Initially empty users
+    # Initially empty users, default_user exposed without creating directories
     res = client.get("/api/users")
     assert res.status_code == 200
-    assert res.json() == {"users": []}
+    assert res.json() == {"users": [], "default_user": "default"}
+    assert not (root / "data").exists()
+
+    # Honors QUESTION_BANK_USER without creating directories
+    monkeypatch.setenv("QUESTION_BANK_USER", "legacy-user")
+    res_configured = client.get("/api/users")
+    assert res_configured.status_code == 200
+    assert res_configured.json() == {"users": [], "default_user": "legacy-user"}
+    assert not (root / "data").exists()
+
+    # Invalid QUESTION_BANK_USER rejected rather than leaked
+    monkeypatch.setenv("QUESTION_BANK_USER", "../escape")
+    res_bad_env = client.get("/api/users")
+    assert res_bad_env.status_code == 400
+    assert res_bad_env.json()["error"] == "invalid_user"
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
 
     # Create user
     res = client.post("/api/users", json={"name": "alice"})
@@ -104,7 +543,7 @@ def test_users_endpoints_and_traversal_rejection(web_bank):
     # Listed
     res = client.get("/api/users")
     assert res.status_code == 200
-    assert res.json() == {"users": ["alice"]}
+    assert res.json() == {"users": ["alice"], "default_user": "default"}
 
     # Reject traversal / invalid names on creation
     for bad in ("../escape", "Alice", "", "-bad", "a" * 33):
@@ -124,6 +563,134 @@ def test_users_endpoints_and_traversal_rejection(web_bank):
     res = client.get("/api/u/nonexistent/stats")
     assert res.status_code == 404
     assert res.json()["error"] == "user_not_found"
+
+
+def test_web_ui_fresh_startup_creates_default_without_guessing_learner(web_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
+    root, _ = web_bank
+    legacy_log = root / "data" / "users" / "legacy-user" / "answers.jsonl"
+    legacy_log.parent.mkdir(parents=True)
+    legacy_bytes = b'{"id":"prior-1","is_correct":true,"tags":["databases"],"exam":"poscomp"}\n'
+    legacy_log.write_bytes(legacy_bytes)
+
+    app = create_app(root)
+    assert not (root / "data" / "users" / "default").exists()
+
+    ui, requests_log = _run_app_js(app, initial_storage={}, action="start_practice")
+
+    assert [r["method"] + " " + r["path"] for r in requests_log[:2]] == [
+        "GET /api/users",
+        "POST /api/users",
+    ]
+    assert all(r["status"] < 400 for r in requests_log), requests_log
+    assert ui["selectedUser"] == "default"
+    assert ui["localStorage"] == {"qb_theme": "lamplight", "qb_user": "default", "qb_session_default": ui["localStorage"].get("qb_session_default")}
+    assert [opt["value"] for opt in ui["userOptions"]] == ["default", "legacy-user", "__new__"]
+    assert ui["alerts"] == []
+    assert ui["hash"] == "#/practice"
+    assert "1 /" in ui["appText"]
+    assert (root / "data" / "users" / "default").is_dir()
+    assert not (root / "data" / "users" / "default" / "answers.jsonl").exists()
+    assert legacy_log.read_bytes() == legacy_bytes
+
+
+def test_web_ui_configured_prior_username_selected(web_bank, monkeypatch):
+    monkeypatch.setenv("QUESTION_BANK_USER", "legacy-user")
+    root, (q1, _, _) = web_bank
+    answers.record_answer(
+        root,
+        "legacy-user",
+        {"question_id": q1["id"], "session_id": "prior", "given_answer": "A", "is_correct": True},
+    )
+    legacy_log = root / "data" / "users" / "legacy-user" / "answers.jsonl"
+    legacy_bytes = legacy_log.read_bytes()
+
+    ui, requests_log = _run_app_js(create_app(root), initial_storage={})
+
+    assert all(r["status"] < 400 for r in requests_log), requests_log
+    assert not any(r["method"] == "POST" and r["path"] == "/api/users" for r in requests_log)
+    assert ui["selectedUser"] == "legacy-user"
+    assert ui["localStorage"]["qb_user"] == "legacy-user"
+    assert "1 answered - 100% correct" in ui["appText"]
+    assert not (root / "data" / "users" / "default").exists()
+    assert legacy_log.read_bytes() == legacy_bytes
+
+
+def test_web_ui_valid_saved_choice_preserved_over_server_default(web_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
+    root, (q1, _, _) = web_bank
+    answers.create_user(root, "alice")
+    answers.record_answer(
+        root,
+        "legacy-user",
+        {"question_id": q1["id"], "session_id": "s1", "given_answer": "A", "is_correct": True},
+    )
+    app = create_app(root)
+    assert TestClient(app).get("/api/users").json()["default_user"] == "default"
+
+    ui, requests_log = _run_app_js(app, initial_storage={"qb_user": "legacy-user"})
+
+    assert all(r["status"] < 400 for r in requests_log), requests_log
+    assert not any(r["method"] == "POST" and r["path"] == "/api/users" for r in requests_log)
+    assert ui["selectedUser"] == "legacy-user"
+    assert ui["localStorage"]["qb_user"] == "legacy-user"
+    assert "1 answered - 100% correct" in ui["appText"]
+    assert not (root / "data" / "users" / "default").exists()
+
+
+def test_web_ui_stale_saved_choice_falls_back_to_default(web_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
+    root, _ = web_bank
+    legacy_log = root / "data" / "users" / "legacy-user" / "answers.jsonl"
+    legacy_log.parent.mkdir(parents=True)
+    legacy_bytes = b'{"id":"prior-1","is_correct":false}\n'
+    legacy_log.write_bytes(legacy_bytes)
+
+    ui, requests_log = _run_app_js(
+        create_app(root),
+        initial_storage={"qb_user": "stale-profile"},
+        action="start_practice",
+    )
+
+    assert [r["method"] + " " + r["path"] for r in requests_log[:2]] == [
+        "GET /api/users",
+        "POST /api/users",
+    ]
+    assert all(r["status"] < 400 for r in requests_log), requests_log
+    assert ui["selectedUser"] == "default"
+    assert ui["localStorage"]["qb_user"] == "default"
+    assert [opt["value"] for opt in ui["userOptions"]] == ["default", "legacy-user", "__new__"]
+    assert "stale-profile" not in [opt["value"] for opt in ui["userOptions"]]
+    assert ui["hash"] == "#/practice"
+    assert legacy_log.read_bytes() == legacy_bytes
+
+
+def test_web_ui_failed_get_or_post_users_surfaces_failure(web_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
+    root, _ = web_bank
+    app = create_app(root)
+
+    ui_get_fail, req_get_fail = _run_app_js(app, initial_storage={}, fail_get_users=True)
+    assert [r["path"] for r in req_get_fail] == ["/api/users"]
+    assert "qb_user" not in ui_get_fail["localStorage"]
+    assert ui_get_fail["userOptions"] == []
+    assert "Error" in ui_get_fail["appText"]
+    assert "Start a session" not in ui_get_fail["appText"]
+
+    ui_post_fail, req_post_fail = _run_app_js(
+        app,
+        initial_storage={"qb_user": "stale-profile"},
+        initial_hash="#/stats",
+        fail_post_users=True,
+    )
+    assert [(r["method"], r["path"]) for r in req_post_fail] == [
+        ("GET", "/api/users"),
+        ("POST", "/api/users"),
+    ]
+    assert ui_post_fail["localStorage"].get("qb_user") != "default"
+    assert ui_post_fail["userOptions"] == []
+    assert "Error" in ui_post_fail["appText"]
+    assert "Statistics" not in ui_post_fail["appText"]
 
 
 def test_question_endpoint_hides_answer(web_bank):
@@ -486,7 +1053,22 @@ def test_topics_invalid_params_and_missing_registry(web_bank):
     for bad in ("0", "501", "abc", "-3"):
         assert client.get("/api/topics", params={"limit": bad}).status_code == 400
 
+    # Local bank docs/tags.md overrides bundled registry while present
+    assert client.get("/api/topics").json()["total"] == 4
+
+    # Removing local docs/tags.md falls back to resolve_tags(root) bundled registry
+    _write_question(root, "poscomp-2024-99", 2024, ["banco-de-dados"])
     (root / "docs" / "tags.md").unlink()
-    res = client.get("/api/topics")
+    res = client.get("/api/topics", params={"limit": 500})
     assert res.status_code == 200
-    assert res.json() == {"total": 0, "topics": []}
+    body = res.json()
+    bundled_text = bundled_tags().read_text(encoding="utf-8")
+    assert "banco-de-dados | Banco De Dados | topic" in bundled_text
+    assert body["total"] > 100
+    assert body["topics"][0] == {
+        "slug": "banco-de-dados",
+        "name": "Banco De Dados",
+        "level": "topic",
+        "active_questions": 1,
+        "by_year": {"2024": 1},
+    }

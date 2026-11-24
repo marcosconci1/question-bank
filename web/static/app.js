@@ -1,8 +1,12 @@
 (() => {
   'use strict';
 
+  const USER_RE = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+
   // State
-  let currentUser = localStorage.getItem('qb_user') || 'marcos';
+  let currentUser = null;
+  let usersReady = false;
+  let userLoadError = null;
   let currentTheme = localStorage.getItem('qb_theme') || 'lamplight';
   let questionsBank = [];
   let userStats = null;
@@ -28,35 +32,87 @@
   applyTheme(currentTheme);
 
   // User Management
+  function renderUserError(message) {
+    app.innerHTML = '';
+    const h2 = document.createElement('h2');
+    h2.textContent = 'Error';
+    const p = document.createElement('p');
+    p.className = 'quiet';
+    p.textContent = message || 'Could not initialize user profile.';
+    app.appendChild(h2);
+    app.appendChild(p);
+  }
+
   async function loadUsers() {
-    try {
-      const res = await fetch('/api/users');
-      const data = await res.json();
-      const users = Array.isArray(data) ? data : (data.users || []);
-      userSelect.innerHTML = '';
-
-      if (!users.includes(currentUser) && currentUser) {
-        const opt = document.createElement('option');
-        opt.value = currentUser;
-        opt.textContent = currentUser;
-        userSelect.appendChild(opt);
-      }
-
-      for (const u of users) {
-        const opt = document.createElement('option');
-        opt.value = u;
-        opt.textContent = u;
-        if (u === currentUser) opt.selected = true;
-        userSelect.appendChild(opt);
-      }
-
-      const newOpt = document.createElement('option');
-      newOpt.value = '__new__';
-      newOpt.textContent = '+ new user...';
-      userSelect.appendChild(newOpt);
-    } catch {
-      // offline / quiet
+    const res = await fetch('/api/users');
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const err = await res.json();
+        detail = err.message || err.error || '';
+      } catch {}
+      throw new Error(detail || `Could not load users (${res.status}).`);
     }
+    const data = await res.json();
+    const users = Array.isArray(data)
+      ? [...data]
+      : (data && Array.isArray(data.users) ? [...data.users] : null);
+    if (!users) {
+      throw new Error('Invalid users response.');
+    }
+
+    const savedUser = localStorage.getItem('qb_user');
+    const serverDefault = (
+      data && !Array.isArray(data) && typeof data.default_user === 'string' && data.default_user.trim()
+    )
+      ? data.default_user.trim()
+      : 'default';
+
+    const selectedUser = (savedUser && USER_RE.test(savedUser) && users.includes(savedUser))
+      ? savedUser
+      : serverDefault;
+
+    if (!USER_RE.test(selectedUser)) {
+      throw new Error('Invalid user profile name.');
+    }
+
+    if (!users.includes(selectedUser)) {
+      const createRes = await fetch('/api/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: selectedUser})
+      });
+      if (!createRes.ok) {
+        let detail = '';
+        try {
+          const err = await createRes.json();
+          detail = err.message || err.error || '';
+        } catch {}
+        throw new Error(detail || `Could not create user '${selectedUser}' (${createRes.status}).`);
+      }
+      users.push(selectedUser);
+      users.sort();
+    }
+
+    currentUser = selectedUser;
+    usersReady = true;
+    userLoadError = null;
+    localStorage.setItem('qb_user', currentUser);
+
+    userSelect.innerHTML = '';
+    for (const u of users) {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = u;
+      if (u === currentUser) opt.selected = true;
+      userSelect.appendChild(opt);
+    }
+
+    const newOpt = document.createElement('option');
+    newOpt.value = '__new__';
+    newOpt.textContent = '+ new user...';
+    userSelect.appendChild(newOpt);
+    userSelect.value = currentUser;
   }
 
   userSelect.addEventListener('change', async (e) => {
@@ -72,10 +128,8 @@
             body: JSON.stringify({name: clean})
           });
           if (res.ok) {
-            currentUser = clean;
-            localStorage.setItem('qb_user', currentUser);
+            localStorage.setItem('qb_user', clean);
             await loadUsers();
-            userSelect.value = currentUser;
             renderRoute();
             return;
           } else {
@@ -86,7 +140,7 @@
           alert('Network error creating user');
         }
       }
-      userSelect.value = currentUser;
+      if (currentUser) userSelect.value = currentUser;
       return;
     }
     currentUser = val;
@@ -1273,6 +1327,17 @@
 
     updateNavActive(path);
 
+    if (!usersReady) {
+      if (userLoadError) {
+        renderUserError(userLoadError);
+      }
+      return;
+    }
+    if (!currentUser) {
+      renderUserError(userLoadError);
+      return;
+    }
+
     if (path === '/' || path === '') {
       renderHome();
     } else if (path === '/practice') {
@@ -1311,5 +1376,11 @@
   // Init
   loadUsers().then(() => {
     renderRoute();
+  }).catch((err) => {
+    usersReady = false;
+    currentUser = null;
+    userLoadError = (err && err.message) ? err.message : 'Could not initialize user profile.';
+    userSelect.innerHTML = '';
+    renderUserError(userLoadError);
   });
 })();

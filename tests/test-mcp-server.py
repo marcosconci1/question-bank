@@ -199,7 +199,8 @@ async def test_list_topics_counts_active_questions_by_year_with_corrections_and_
 
 
 @pytest.mark.anyio
-async def test_get_stats_explains_an_absent_or_empty_log(fixture_bank):
+async def test_get_stats_explains_an_absent_or_empty_log(fixture_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
     root, _, _ = fixture_bank
     server = create_server(root, search_core=lambda **_: [], embedder=lambda _: [[1.0]])
     async with Client(server, mode="legacy") as client:
@@ -208,7 +209,7 @@ async def test_get_stats_explains_an_absent_or_empty_log(fixture_bank):
     assert stats["per_tag"] == []
     assert stats["note"] == "No answers log exists yet."
 
-    answers_file = root / "data" / "users" / "marcos" / "answers.jsonl"
+    answers_file = root / "data" / "users" / "default" / "answers.jsonl"
     answers_file.parent.mkdir(parents=True)
     answers_file.write_text("\n", encoding="utf-8")
     async with Client(server, mode="legacy") as client:
@@ -218,9 +219,10 @@ async def test_get_stats_explains_an_absent_or_empty_log(fixture_bank):
 
 
 @pytest.mark.anyio
-async def test_get_stats_aggregates_tags_exams_and_weeks(fixture_bank):
+async def test_get_stats_aggregates_tags_exams_and_weeks(fixture_bank, monkeypatch):
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
     root, _, _ = fixture_bank
-    answers_file = root / "data" / "users" / "marcos" / "answers.jsonl"
+    answers_file = root / "data" / "users" / "default" / "answers.jsonl"
     answers_file.parent.mkdir(parents=True)
     answers_file.write_text(
         "\n".join(

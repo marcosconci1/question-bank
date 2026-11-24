@@ -1,0 +1,14 @@
+name = "poscomp"
+kind = "csv"
+exam = "poscomp"
+description = "POSCOMP Computer Science CSV dataset with 5 options and area/subarea tags."
+
+[options]
+id_column = "id"
+stem_column = "stem"
+number_column = "number"
+options_column = "options"
+answer_column = "key"
+tags_columns = ["knowledge_area", "area", "subarea"]
+id_prefix = "poscomp-"
+source_template = "POSCOMP {year}, question {number}"

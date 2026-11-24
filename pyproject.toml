@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "question-search"
-version = "0.1.0"
+version = "0.2.0"
 description = "Retrieval-only semantic search layer over question-bank"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -42,7 +42,7 @@ where = ["src"]
 namespaces = true
 
 [tool.setuptools.package-data]
-question_bank = ["tags.md"]
+question_bank = ["tags.md", "ingest/profiles/*.toml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -54,4 +54,6 @@ markers = [
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    "setuptools>=61",
+    "wheel",
 ]

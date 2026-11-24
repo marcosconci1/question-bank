@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import tomllib
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -26,22 +27,30 @@ class IngestProfile:
 
 def list_profiles(profiles_dir: Path | None = None) -> list[str]:
     """Return available built-in profile names in sorted order."""
-    directory = profiles_dir or EXAMPLES_DIR
-    if not directory.is_dir():
-        return []
-    return sorted(path.stem for path in directory.glob("*.toml"))
+    if profiles_dir is not None:
+        if not profiles_dir.is_dir():
+            return []
+        return sorted(path.stem for path in profiles_dir.glob("*.toml"))
+    return sorted(
+        resource.name.removesuffix(".toml")
+        for resource in resources.files(__package__).joinpath("profiles").iterdir()
+        if resource.is_file() and resource.name.endswith(".toml")
+    )
 
 
 def resolve_profile_path(name_or_path: str, profiles_dir: Path | None = None) -> Path:
-    """Resolve either an explicit TOML path or a named profile under profiles/examples/."""
+    """Resolve an explicit TOML path or a named built-in profile (or override in profiles_dir)."""
     candidate = Path(name_or_path).expanduser()
     if candidate.is_file():
         return candidate.resolve()
-    directory = profiles_dir or EXAMPLES_DIR
-    named = directory / (name_or_path if name_or_path.endswith(".toml") else f"{name_or_path}.toml")
+    filename = name_or_path if name_or_path.endswith(".toml") else f"{name_or_path}.toml"
+    if profiles_dir is not None:
+        named = profiles_dir / filename
+    else:
+        named = Path(str(resources.files(__package__).joinpath("profiles", filename)))
     if named.is_file():
         return named.resolve()
-    available = ", ".join(list_profiles(directory)) or "none"
+    available = ", ".join(list_profiles(profiles_dir)) or "none"
     raise ValueError(f"Unknown import profile {name_or_path!r} (available: {available})")
 
 

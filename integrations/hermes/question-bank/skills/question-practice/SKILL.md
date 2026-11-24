@@ -1,8 +1,7 @@
 ---
 name: question-practice
 description: Practice real exam questions without premature answers.
-version: 1.0.0
-author: Hermes Skill
+version: 0.2.0
 license: MIT
 platforms: [linux, macos]
 metadata:
@@ -20,8 +19,7 @@ session state into the question bank.
 ## When to Use
 
 Use for exam practice, mock exams, targeted drills, discursive self-grading,
-and reviews of recorded mistakes. Use the library skill separately for
-conceptual teaching or source consultation.
+and reviews of recorded mistakes.
 
 ## Prerequisites
 
@@ -54,7 +52,8 @@ CLI reads.
 - After an attempt: `get-question(id, view="solution")`.
 - Progress: `get-stats()`.
 - Record: run `scripts/record-answer.py --input -` from this skill directory
-  through `terminal`, supplying one JSON object on standard input.
+   through `terminal`, supplying one JSON object on standard input. Run it
+   from this skill directory or pass its absolute path.
 
 Required recorder fields are `question_id`, `session_id`, `given_answer`, and
 `is_correct`. Optional `time_spent` is a non-negative integer measured during
@@ -66,9 +65,9 @@ year, tags, and timestamp from the bank and clock.
 1. **Set the target.** Agree on the objective and rough question count. Create
    one opaque `session_id` for the practice run and reuse it. Do not include
    personal information in the identifier.
-2. **Protect the challenge.** Never call the solution view, consult the
-   library with exercise text, or retrieve related worked answers before the
-   learner attempts that question. Present one meaningful question at a time
+2. **Protect the challenge.** Never call the solution view or retrieve related
+   worked answers before the learner attempts that question. Present one
+   meaningful question at a time
    and do not leak the answer through hints, examples, or option emphasis.
 3. **Handle visuals honestly.** Read every required image with
    `vision_analyze`. If a stem, figure, or option remains unreadable, skip that

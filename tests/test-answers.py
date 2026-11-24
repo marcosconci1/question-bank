@@ -10,7 +10,7 @@ from question_bank import answers
 
 
 def test_validate_user_accepts_valid_names():
-    for name in ("marcos", "alice", "user_123", "bob-smith", "u", "a" * 32):
+    for name in ("default", "legacy_student", "alice", "user_123", "bob-smith", "u", "a" * 32):
         assert answers.validate_user(name) == name
 
 
@@ -22,7 +22,7 @@ def test_validate_user_rejects_invalid_names():
 
 def test_current_user_default_and_env(monkeypatch):
     monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
-    assert answers.current_user() == "marcos"
+    assert answers.current_user() == "default"
 
     monkeypatch.setenv("QUESTION_BANK_USER", "student1")
     assert answers.current_user() == "student1"
@@ -34,7 +34,7 @@ def test_current_user_default_and_env(monkeypatch):
 
 def test_answers_path(tmp_path, monkeypatch):
     monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
-    assert answers.answers_path(tmp_path) == tmp_path / "data" / "users" / "marcos" / "answers.jsonl"
+    assert answers.answers_path(tmp_path) == tmp_path / "data" / "users" / "default" / "answers.jsonl"
     assert answers.answers_path(tmp_path, "alice") == tmp_path / "data" / "users" / "alice" / "answers.jsonl"
 
     with pytest.raises(ValueError):
@@ -107,6 +107,33 @@ def test_record_answer_and_duplicate_rejection(tmp_path):
 
     read_back2 = answers.read_answers(user_answers_file)
     assert len(read_back2) == 2
+
+
+def test_default_write_leaves_existing_user_history_untouched(tmp_path, monkeypatch):
+    qdir = tmp_path / "questions"
+    qdir.mkdir()
+    (qdir / "q1.json").write_text(json.dumps({"id": "q1"}), encoding="utf-8")
+    old_log = tmp_path / "data" / "users" / "legacy_student" / "answers.jsonl"
+    old_log.parent.mkdir(parents=True)
+    old_bytes = b'{"id":"historical"}\n'
+    old_log.write_bytes(old_bytes)
+    monkeypatch.delenv("QUESTION_BANK_USER", raising=False)
+    request = {"question_id": "q1", "session_id": "s1", "given_answer": "A", "is_correct": True}
+
+    answers.record_answer(tmp_path, answers.current_user(), request)
+    assert (tmp_path / "data" / "users" / "default" / "answers.jsonl").is_file()
+    assert old_log.read_bytes() == old_bytes
+
+    monkeypatch.setenv("QUESTION_BANK_USER", "legacy_student")
+    answers.record_answer(tmp_path, answers.current_user(), {**request, "session_id": "s2"})
+    assert len(answers.read_answers(old_log)) == 2
+
+
+def test_invalid_default_user_rejected_without_writes(tmp_path, monkeypatch):
+    monkeypatch.setenv("QUESTION_BANK_USER", "../escape")
+    with pytest.raises(ValueError):
+        answers.answers_path(tmp_path)
+    assert not (tmp_path / "data").exists()
 
 
 def test_read_answers_skips_bad_lines(tmp_path):

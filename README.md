@@ -70,7 +70,7 @@ CSV ingestion works offline. PDF ingestion through the LLM adapter needs an Open
 
 | Piece | What it does |
 | --- | --- |
-| `qb` / `question-bank` CLI | `init`, `ingest`, `validate`, `search`, `stats`, `mcp`, `doctor`, `diagnose` |
+| `qb` / `question-bank` CLI | `init`, `import`, `ingest`, `validate`, `search`, `stats`, `mcp`, `doctor`, `diagnose` |
 | `src/question_bank/` | Adapters, validation, provenance, quarantine, event journal |
 | `question-search` CLI | Local BM25 search, optional semantic search, index status |
 | MCP server (`question-bank-mcp`) | Exposes `search-questions`, `get-question`, `list-topics`, and `get-stats` over stdio |

@@ -108,7 +108,7 @@ uv run --extra import qb import pdf booklet.pdf --profile fgv --year 2024 \
   --answer-key answer-key.pdf --booklet-url "$BOOKLET_URL" --answer-key-url "$ANSWER_KEY_URL"
 ```
 
-Example declarative profiles live under `profiles/examples/` (`fgv`, `iades`, `cesgranrio`, `fcpc`, `poscomp`, `enade`). Each TOML file declares `name`, `kind`, `exam`, and an `[options]` table passed to the matching adapter; custom `.toml` paths can be passed directly to `--profile`.
+The named built-in profiles (`fgv`, `iades`, `cesgranrio`, `fcpc`, `poscomp`, `enade`) ship in the installed package. Their example TOML files remain available under `profiles/examples/`. Each TOML file declares `name`, `kind`, `exam`, and an `[options]` table passed to the matching adapter; custom `.toml` paths can be passed directly to `--profile`.
 
 ## Environment variables
 

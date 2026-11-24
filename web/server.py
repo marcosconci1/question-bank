@@ -29,6 +29,7 @@ import uvicorn
 
 from question_bank import answers
 from question_bank.corrections import apply_corrections, corrections_path, load_corrections
+from question_bank.tag_registry import resolve_tags
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -124,9 +125,9 @@ TOPIC_LEVELS = ("area", "topic", "subtopic")
 
 
 def _load_registry(root: Path) -> list[tuple[str, str, str]]:
-    """Return (slug, display name, level) rows from the bank's docs/tags.md."""
+    """Return (slug, display name, level) rows from bank docs/tags.md or bundled tags.md."""
     try:
-        text = (root / "docs" / "tags.md").read_text(encoding="utf-8")
+        text = resolve_tags(root).read_text(encoding="utf-8")
     except OSError:
         return []
     rows: list[tuple[str, str, str]] = []
@@ -165,8 +166,12 @@ def create_app(bank_root: Path | None = None) -> Starlette:
         return FileResponse(target)
 
     async def get_users(_: Request) -> Response:
+        try:
+            default_user = answers.current_user()
+        except ValueError as exc:
+            return JSONResponse({"error": "invalid_user", "message": str(exc)}, status_code=400)
         users = answers.list_users(root)
-        return JSONResponse({"users": users})
+        return JSONResponse({"users": users, "default_user": default_user})
 
     async def post_user(request: Request) -> Response:
         try:

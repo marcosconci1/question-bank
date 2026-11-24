@@ -1,7 +1,7 @@
 ---
 name: exercise-list
 description: Use when asked for an exercise list on a content, built progressively.
-version: 1.0.0
+version: 0.2.0
 license: MIT
 platforms: [linux, macos]
 metadata:
@@ -26,12 +26,12 @@ The list is only a plan. To answer the questions, hand off to `question-practice
 ## Procedure
 
 1. **Fix the content and size.** Default: 4-6 subtopics, 2-3 questions each, 12-18 total. Ask only if the content is truly ambiguous.
-2. **Order the subtopics.** For a university course, read the course `README.md` (ementa) and `ROADMAP.md` in `~/unochapeco-cc/<course>/` and follow that order. Otherwise use standard teaching order for the content.
+2. **Order the subtopics.** If the learner supplies a syllabus or course-material path, consult that material and follow its order. Otherwise use the standard teaching order for the content.
 3. **Map subtopics to tags.** Call `list-topics(query=<keyword>)` per subtopic. Pick the registered slug that fits and read its `active_questions`. Drop empty slugs and report them in one line.
 4. **Fetch candidates.** `search-questions(objective=<keywords>, filters={tags:[slug]}, limit=8)` per subtopic. Use `exam`/`year` filters only if the learner asked.
-5. **Select per subtopic.** Keep 2-3: multiple choice first, a discursive item last in the group, different years when possible. Skip a candidate whose preview is garbled and note its id for `question-bank-repair`.
+5. **Select per subtopic.** Keep 2-3: multiple choice first, a discursive item last in the group, different years when possible. Skip a candidate whose preview is garbled and report its question ID to the learner.
 6. **Show the list** in the chat, grouped by subtopic: `n. id — exam year #number — preview (about 80 chars)`. Then one line: how many questions, which subtopics were short, and the first question to start with.
-7. **Save only on request** (or when it is course work): append a `## Lista de exercícios — <content>` section with checkboxes to that course's single `ROADMAP.md`. Never create another file.
+7. **Save only on explicit request.** Ask where the learner wants the list saved if they have not selected a path. Write only to that path; never assume a private repository or create a course file by default.
 8. **Practice.** When the learner says go, run `question-practice` in list order. After at least five recorded answers on one subtopic, use `get-stats` to propose repeating a weak subtopic. Ask before changing the list.
 
 ## Pitfalls

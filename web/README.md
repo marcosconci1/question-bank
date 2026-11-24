@@ -19,12 +19,15 @@ web/start.sh   # loads a local .env (OPENROUTER_API_KEY); or: uv run --extra web
 | `QUESTION_BANK_WEB_HOST` | Host address to bind the web server | `127.0.0.1` |
 | `QUESTION_BANK_WEB_PORT` | Port number to listen on | `8780` |
 | `QUESTION_BANK_ROOT` | Absolute or relative path to question-bank root | Parent of `web/` |
-| `QUESTION_BANK_USER` | Active user name for CLI/MCP fallback | `marcos` |
+| `QUESTION_BANK_USER` | Default user name advertised by `GET /api/users` (`default_user`) and used by CLI/MCP | `default` |
 
 ## Data Locations
 
 - **Questions**: Read directly from `questions/*.json`. Practice and browse require no Qdrant or external APIs.
 - **Answer Logs**: Stored per user in `data/users/<user>/answers.jsonl`.
+- **Browser profile**: The browser keeps a saved `qb_user` choice in `localStorage` if that user's folder still exists. Otherwise, it selects the server's `default_user`, taken from `QUESTION_BANK_USER` or `default`.
+- **First use**: If the selected default profile does not exist, the browser creates it through `POST /api/users` before rendering practice or statistics. A failed `GET` or `POST /api/users` displays an error instead of using a nonexistent profile.
+- **Existing histories**: History files stay in place. The browser does not guess another learner's profile or migrate, copy, merge, rewrite, or delete history. Set `QUESTION_BANK_USER` to a prior username to select that history by default.
 - **Assets**: Images referenced in question stems or options are served from `assets/`.
 
 ## API Endpoints
@@ -33,7 +36,7 @@ All API endpoints return JSON payloads.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/users` | List existing users with folders in `data/users/` |
+| `GET` | `/api/users` | List existing users with folders in `data/users/` plus `default_user` (`QUESTION_BANK_USER` or `default`) without creating directories |
 | `POST` | `/api/users` | Create a new user folder (`{"name": "username"}`) |
 | `GET` | `/api/questions` | Query questions index with optional `exam`, `year`, `tag`, and `status` (`active` or `all`) filters |
 | `GET` | `/api/questions/{id}` | Read question content with `answer` redacted. Includes `rubric` for discursive questions. |
@@ -42,7 +45,7 @@ All API endpoints return JSON payloads.
 | `GET` | `/api/u/{user}/session/{session_id}` | Retrieve recorded attempts for a session |
 | `GET` | `/api/u/{user}/stats` | Retrieve overall accuracy, worst-first topic breakdowns, and 182-day activity data |
 | `GET` | `/api/search` | Semantic vector search query (`q`, `exam`, `year`, `tag`, `limit`). Returns 503 if Qdrant or embedding is offline |
-| `GET` | `/api/topics` | Registered topics (`docs/tags.md`) with active question counts and per-year `by_year`; optional `level` (`area`, `topic`, `subtopic`) and `limit` (1-500, default 200); sorted by count desc, then slug; invalid params return 400 |
+| `GET` | `/api/topics` | Registered topics (`docs/tags.md` in bank root when present, otherwise bundled `question_bank/tags.md`) with active question counts and per-year `by_year`; optional `level` (`area`, `topic`, `subtopic`) and `limit` (1-500, default 200); sorted by count desc, then slug; invalid params return 400 |
 
 ## Security
 

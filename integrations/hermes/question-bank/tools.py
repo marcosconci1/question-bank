@@ -18,7 +18,7 @@ _DEFAULT_BANK = Path(
     os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local" / "share"))
 ) / "question-bank"
 MAX_LIMIT = 50
-DEFAULT_USER = "marcos"
+DEFAULT_USER = "default"
 _USER_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
@@ -350,10 +350,12 @@ def get_stats(args: dict[str, Any], **kwargs: Any) -> str:
 
 
 def _registry() -> list[tuple[str, str, str]]:
-    """Return (slug, display name, level) rows from docs/tags.md."""
+    """Return (slug, display name, level) rows from docs/tags.md or bundled tags.md."""
+    bank_tags = _bank_root() / "docs" / "tags.md"
+    tags_path = bank_tags if bank_tags.is_file() else Path(__file__).with_name("tags.md")
     rows: list[tuple[str, str, str]] = []
     in_registry = False
-    for raw in (_bank_root() / "docs" / "tags.md").read_text(encoding="utf-8").splitlines():
+    for raw in tags_path.read_text(encoding="utf-8").splitlines():
         line = raw.strip()
         if line.startswith("## Registry"):
             in_registry = True
@@ -383,14 +385,16 @@ def list_topics(args: dict[str, Any], **kwargs: Any) -> str:
         fixes = _load_fixes()
         counts: dict[str, int] = defaultdict(int)
         year_counts: dict[str, dict[int, int]] = defaultdict(lambda: defaultdict(int))
-        for path in (_bank_root() / "questions").glob("*.json"):
+        questions_dir = _bank_root() / "questions"
+        for path in sorted(questions_dir.glob("*.json")) if questions_dir.is_dir() else ():
             question = _apply_corrections(json.loads(path.read_text(encoding="utf-8")), fixes)
-            if question.get("status") == "active":
+            if (question.get("status") or "active") == "active":
                 year = question.get("year")
-                for tag in question.get("tags", []):
-                    counts[tag] += 1
-                    if isinstance(year, int) and not isinstance(year, bool):
-                        year_counts[tag][year] += 1
+                for tag in question.get("tags") or []:
+                    if isinstance(tag, str) and tag:
+                        counts[tag] += 1
+                        if isinstance(year, int) and not isinstance(year, bool):
+                            year_counts[tag][year] += 1
         needle = query.strip().lower() if query else ""
         topics = [
             {
